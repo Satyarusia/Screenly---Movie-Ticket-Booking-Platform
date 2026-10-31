@@ -1,0 +1,13 @@
+/* App.css - Screenly Application Wrapper Layout */
+
+.app-wrapper {
+  display: flex;
+  flex-direction: column;
+  min-height: 100vh;
+  background-color: #0a0b12;
+  color: #f8fafc;
+}
+
+.main-content {
+  flex: 1 0 auto;
+}
