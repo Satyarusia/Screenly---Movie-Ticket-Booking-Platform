@@ -842,9 +842,11 @@ const initialMovies = [
 
 const seedDB = async () => {
   try {
-    const mongoUri =
-      process.env.MONGO_URI ||
-      "mongodb+srv://satyarusia1109_db_user:Movie12345@cluster0.iwlkgod.mongodb.net/?appName=Cluster0";
+    const mongoUri = process.env.MONGO_URI;
+    if (!mongoUri) {
+      console.error("Error: MONGO_URI is not defined in your environment (.env)");
+      process.exit(1);
+    }
     console.log("Connecting to MongoDB...");
     await mongoose.connect(mongoUri);
     console.log("MongoDB Connected!");

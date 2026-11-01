@@ -104,6 +104,7 @@ Screenly/
 ├── client/
 │   ├── public/
 │   ├── src/
+│   ├── .env.example
 │   └── package.json
 ├── server/
 │   ├── config/
@@ -117,6 +118,7 @@ Screenly/
 │   ├── .env.example
 │   └── package.json
 ├── .gitignore
+├── LICENSE
 └── README.md
 ```
 
@@ -369,3 +371,9 @@ Medi-Caps University
 ## Academic Note
 
 This project was developed as part of my learning in Full Stack Web Development and is intended for educational and academic evaluation purposes.
+
+---
+
+## License
+
+This project is open-source and available under the [MIT License](LICENSE).

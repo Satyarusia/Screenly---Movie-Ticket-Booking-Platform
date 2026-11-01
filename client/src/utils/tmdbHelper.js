@@ -4,8 +4,7 @@ import axios from "axios";
 // Reads dynamically from client/.env
 const TMDB_IMAGE_BASE =
   import.meta.env.VITE_TMDB_IMAGE_BASE || "https://image.tmdb.org/t/p";
-const TMDB_API_KEY =
-  import.meta.env.VITE_TMDB_API_KEY || "4320c6bb6bced39b12edc2b10de42798";
+const TMDB_API_KEY = import.meta.env.VITE_TMDB_API_KEY || "";
 
 // In-memory cache so we never re-fetch the same movie twice
 const tmdbCache = new Map();
@@ -457,6 +456,7 @@ export const validateAndEnrichMovie = (movie) => {
 export const fetchLiveTmdbMovie = async (movie) => {
   const title = getMovieTitle(movie);
   if (!title || title === "Cinema Feature") return null;
+  if (!TMDB_API_KEY) return null;
 
   const cacheKey = title.toLowerCase().trim();
   if (tmdbCache.has(cacheKey)) {

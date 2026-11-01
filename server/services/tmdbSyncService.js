@@ -5,7 +5,7 @@ const Movie = require("../models/movieModel");
 const Theatre = require("../models/theatreModel");
 const Show = require("../models/showModel");
 
-const TMDB_API_KEY = process.env.TMDB_API_KEY || "4320c6bb6bced39b12edc2b10de42798";
+const TMDB_API_KEY = process.env.TMDB_API_KEY || "";
 const TMDB_BASE_URL = "https://api.themoviedb.org/3";
 const POSTER_DIR = path.join(__dirname, "..", "..", "client", "public", "posters");
 
