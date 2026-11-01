@@ -121,7 +121,13 @@ const createShow = async (req, res) => {
     } = req.body;
 
     if (!movie || !theatre || !showTime) {
-      return res.status(400).json({ message: "Movie, theatre, and show time are required." });
+      return res.status(400).json({
+        message: !movie
+          ? "Please select an existing movie. A show cannot be scheduled without a movie."
+          : !theatre
+          ? "Please select a multiplex theatre venue."
+          : "Show date and time are required.",
+      });
     }
 
     const parsedStartTime = new Date(showTime);

@@ -358,12 +358,88 @@ const sanitizeMovieData = (data) => {
   return sanitized;
 };
 
+// @desc    Get unique available posters from database and canonical map
+// @route   GET /api/movies/posters/available
+// @access  Private/Admin
+const getAvailablePosters = async (req, res) => {
+  try {
+    const movies = await Movie.find().select(
+      "title movieName poster tmdbId language releaseDate theatricalStatus"
+    );
+    const posterMap = new Map();
+
+    // 1. From database movies
+    movies.forEach((m) => {
+      const p = m.poster;
+      const title = m.title || m.movieName;
+      if (p && typeof p === "string" && p.trim() && !posterMap.has(p)) {
+        posterMap.set(p, {
+          title,
+          poster: p,
+          source: "Database",
+          tmdbId: m.tmdbId,
+          language: m.language,
+          theatricalStatus: m.theatricalStatus,
+        });
+      }
+    });
+
+    // 2. From canonical TMDB mapping
+    for (const [key, val] of Object.entries(MOVIE_TMDB_MAP)) {
+      if (val.poster && !posterMap.has(val.poster)) {
+        const titleCase = key
+          .split(" ")
+          .map((w) => w.charAt(0).toUpperCase() + w.slice(1))
+          .join(" ");
+        posterMap.set(val.poster, {
+          title: titleCase,
+          poster: val.poster,
+          source: "TMDB Synchronized",
+          tmdbId: val.tmdbId,
+        });
+      }
+    }
+
+    res.json(Array.from(posterMap.values()));
+  } catch (error) {
+    res.status(500).json({ message: error.message });
+  }
+};
+
 // @desc    Create a new movie
 // @route   POST /api/movies
 // @access  Private/Admin
 const createMovie = async (req, res) => {
   try {
     const payload = sanitizeMovieData(req.body);
+    const normalizedTitle = (payload.title || payload.movieName || "").trim();
+
+    if (!normalizedTitle) {
+      return res.status(400).json({ message: "Movie title is required." });
+    }
+
+    // Duplicate check: case-insensitive match on title
+    const escaped = normalizedTitle.replace(/[-/\\^$*+?.()|[\]{}]/g, "\\$&");
+    const existing = await Movie.findOne({
+      title: { $regex: new RegExp(`^${escaped}$`, "i") },
+    });
+
+    if (existing) {
+      return res.status(409).json({
+        message: `Movie "${normalizedTitle}" already exists in the catalog. Edit the existing movie instead of creating a duplicate.`,
+        existingMovie: existing,
+      });
+    }
+
+    // Auto-resolve canonical poster if poster was omitted or blank
+    const titleKey = normalizedTitle.toLowerCase();
+    if (!payload.poster || !payload.poster.trim()) {
+      if (MOVIE_TMDB_MAP[titleKey]) {
+        payload.poster = MOVIE_TMDB_MAP[titleKey].poster;
+        payload.tmdbId = MOVIE_TMDB_MAP[titleKey].tmdbId;
+      }
+    }
+
     const movie = await Movie.create(payload);
     res.status(201).json(movie);
   } catch (error) {
@@ -377,6 +453,21 @@ const createMovie = async (req, res) => {
 const updateMovie = async (req, res) => {
   try {
     const payload = sanitizeMovieData(req.body);
+
+    if (payload.title) {
+      const normalizedTitle = payload.title.trim();
+      const escaped = normalizedTitle.replace(/[-/\\^$*+?.()|[\]{}]/g, "\\$&");
+      const duplicate = await Movie.findOne({
+        _id: { $ne: req.params.id },
+        title: { $regex: new RegExp(`^${escaped}$`, "i") },
+      });
+      if (duplicate) {
+        return res.status(409).json({
+          message: `Another movie with title "${normalizedTitle}" already exists in the catalog.`,
+        });
+      }
+    }
+
     const movie = await Movie.findByIdAndUpdate(req.params.id, payload, {
       new: true,
       runValidators: true,
@@ -508,4 +599,5 @@ module.exports = {
   deleteMovie,
   resolveMovieStatus,
   proxyImage,
+  getAvailablePosters,
 };

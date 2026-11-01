@@ -7,11 +7,13 @@ const {
   updateMovie,
   deleteMovie,
   proxyImage,
+  getAvailablePosters,
 } = require("../controllers/movieController");
 const { protect, adminOnly } = require("../middleware/authMiddleware");
 
 // Anyone can look at movies & proxy images
 router.get("/image-proxy", proxyImage);
+router.get("/posters/available", protect, adminOnly, getAvailablePosters);
 router.get("/", getMovies);
 router.get("/:id", getMovieById);
 

@@ -1,12 +1,16 @@
 // client/src/pages/admin/ManageMovies.jsx
-import { useState, useEffect, useCallback } from "react";
+import { useState, useEffect, useCallback, useMemo } from "react";
 import { Link } from "react-router-dom";
 import api from "../../services/api";
 import LoadingSpinner from "../../components/LoadingSpinner";
 import ConfirmModal from "../../components/ConfirmModal";
 import Pagination from "../../components/Pagination";
 import AdminNav from "../../components/AdminNav";
-import { getPosterUrl, createTitlePosterSvg } from "../../utils/tmdbHelper";
+import {
+  getPosterUrl,
+  createTitlePosterSvg,
+  TMDB_CATALOG_PRESETS,
+} from "../../utils/tmdbHelper";
 import toast from "react-hot-toast";
 
 export default function ManageMovies() {
@@ -16,10 +20,21 @@ export default function ManageMovies() {
   const [error, setError] = useState("");
   const [successMsg, setSuccessMsg] = useState("");
 
-  // Search & Pagination
+  // Search & Pagination for existing cinema catalog
   const [search, setSearch] = useState("");
   const [currentPage, setCurrentPage] = useState(1);
   const itemsPerPage = 8;
+
+  // Template Search / Autofill Selection State
+  const [catalogSearch, setCatalogSearch] = useState("");
+  const [catalogFilter, setCatalogFilter] = useState("all"); // 'all' | 'database' | 'tmdb'
+  const [showCatalogPicker, setShowCatalogPicker] = useState(true);
+
+  // Poster Selection Modal State
+  const [posterModalOpen, setPosterModalOpen] = useState(false);
+  const [availablePosters, setAvailablePosters] = useState([]);
+  const [loadingPosters, setLoadingPosters] = useState(false);
+  const [posterSearch, setPosterSearch] = useState("");
 
   // Confirmation Modal State for Deletion
   const [deleteTarget, setDeleteTarget] = useState(null);
@@ -59,26 +74,194 @@ export default function ManageMovies() {
     fetchMovies();
   }, [fetchMovies]);
 
+  // Load available posters from backend on demand
+  const loadAvailablePosters = async () => {
+    if (availablePosters.length > 0) return;
+    try {
+      setLoadingPosters(true);
+      const res = await api.get("/api/movies/posters/available");
+      if (Array.isArray(res.data)) {
+        setAvailablePosters(res.data);
+      }
+    } catch {
+      // Fallback posters from existing movies and presets
+      const fallbackMap = new Map();
+      movies.forEach((m) => {
+        if (m.poster) {
+          fallbackMap.set(m.poster, {
+            title: m.title || m.movieName,
+            poster: m.poster,
+            source: "Database",
+          });
+        }
+      });
+      TMDB_CATALOG_PRESETS.forEach((p) => {
+        if (p.poster && !fallbackMap.has(p.poster)) {
+          fallbackMap.set(p.poster, {
+            title: p.title,
+            poster: p.poster,
+            source: "TMDB Synchronized",
+          });
+        }
+      });
+      setAvailablePosters(Array.from(fallbackMap.values()));
+    } finally {
+      setLoadingPosters(false);
+    }
+  };
+
+  const handleOpenPosterModal = () => {
+    setPosterModalOpen(true);
+    loadAvailablePosters();
+  };
+
+  const handleSelectPoster = (posterUrl) => {
+    setFormData((prev) => ({ ...prev, poster: posterUrl }));
+    setPosterModalOpen(false);
+    toast.success("Poster selected and preview updated!");
+  };
+
+  // Combine database movies and TMDB presets for the auto-fill picker
+  const combinedCatalogList = useMemo(() => {
+    const list = [];
+    const seenTitles = new Set();
+
+    // 1. Database movies
+    if (catalogFilter === "all" || catalogFilter === "database") {
+      movies.forEach((m) => {
+        const title = m.title || m.movieName || "";
+        const lower = title.toLowerCase().trim();
+        seenTitles.add(lower);
+        list.push({
+          ...m,
+          source: "Database",
+          isDatabase: true,
+          releaseYear: m.releaseDate ? new Date(m.releaseDate).getFullYear() : "2024",
+        });
+      });
+    }
+
+    // 2. TMDB Synchronized Presets
+    if (catalogFilter === "all" || catalogFilter === "tmdb") {
+      TMDB_CATALOG_PRESETS.forEach((p) => {
+        const lower = p.title.toLowerCase().trim();
+        const existsInDb = seenTitles.has(lower);
+        list.push({
+          ...p,
+          source: existsInDb ? "Database & TMDB" : "TMDB Catalog",
+          isDatabase: existsInDb,
+          releaseYear: p.releaseDate ? new Date(p.releaseDate).getFullYear() : "2024",
+        });
+      });
+    }
+
+    if (!catalogSearch.trim()) return list;
+
+    const q = catalogSearch.toLowerCase().trim();
+    return list.filter((item) => {
+      const title = (item.title || item.movieName || "").toLowerCase();
+      const lang = (item.language || "").toLowerCase();
+      const genres = Array.isArray(item.genre)
+        ? item.genre.join(" ").toLowerCase()
+        : (item.genre || "").toLowerCase();
+      return title.includes(q) || lang.includes(q) || genres.includes(q);
+    });
+  }, [movies, catalogFilter, catalogSearch]);
+
+  // Handle selecting a movie card to autofill form
+  const handleSelectTemplateMovie = (m) => {
+    const titleKey = (m.title || m.movieName || "").trim().toLowerCase();
+    const existingDbMovie = movies.find(
+      (dbM) => (dbM.title || dbM.movieName || "").trim().toLowerCase() === titleKey
+    );
+
+    if (existingDbMovie) {
+      // If already exists in DB, edit existing to prevent duplicate record
+      handleEdit(existingDbMovie);
+      toast.success(
+        `Loaded existing movie "${existingDbMovie.title || existingDbMovie.movieName}" for editing. Duplicate creation prevented.`
+      );
+    } else {
+      // Populate fields from TMDB preset for quick adding
+      setEditingId(null);
+      setFormData({
+        title: m.title || m.movieName || "",
+        language: m.language || "Hindi",
+        genre: Array.isArray(m.genre)
+          ? m.genre.join(", ")
+          : m.genre || "Action, Drama",
+        certification: m.certification || "U/A",
+        duration: m.duration || m.runtime || 150,
+        theatricalStatus: m.theatricalStatus || "Now Showing",
+        isAdvanceBooking: Boolean(m.isAdvanceBooking),
+        director: m.director || "",
+        cast: Array.isArray(m.cast) ? m.cast.join(", ") : m.cast || "",
+        releaseDate: m.releaseDate
+          ? new Date(m.releaseDate).toISOString().split("T")[0]
+          : new Date().toISOString().split("T")[0],
+        poster: m.poster || "",
+        description: m.description || "",
+      });
+      toast.success(
+        `Autofilled "${m.title}" details from TMDB catalog! Customize fields and click Add Movie.`
+      );
+    }
+
+    // Scroll smoothly to form
+    const formEl = document.getElementById("movie-form-section");
+    if (formEl) {
+      formEl.scrollIntoView({ behavior: "smooth" });
+    }
+  };
+
   const handleSubmit = async (e) => {
     e.preventDefault();
     setError("");
     setSuccessMsg("");
 
-    if (!formData.title.trim()) {
+    const normalizedTitle = formData.title.trim();
+    if (!normalizedTitle) {
       toast.error("Movie title is required.");
       return;
     }
 
+    // Duplicate Movie Prevention (case-insensitive check against catalog)
+    if (!editingId) {
+      const duplicate = movies.find(
+        (m) =>
+          (m.title || m.movieName || "").trim().toLowerCase() ===
+          normalizedTitle.toLowerCase()
+      );
+      if (duplicate) {
+        const msg = `Movie "${normalizedTitle}" already exists in the catalog. Edit the existing movie instead of creating a duplicate.`;
+        setError(msg);
+        toast.error(msg);
+        return;
+      }
+    }
+
     const payload = {
       ...formData,
-      title: formData.title.trim(),
-      movieName: formData.title.trim(),
+      title: normalizedTitle,
+      movieName: normalizedTitle,
       duration: Number(formData.duration) || 150,
       theatricalStatus: formData.theatricalStatus,
       isAdvanceBooking: Boolean(formData.isAdvanceBooking),
       director: formData.director.trim(),
-      cast: typeof formData.cast === "string" ? formData.cast.split(",").map((s) => s.trim()).filter(Boolean) : formData.cast,
-      genre: typeof formData.genre === "string" ? formData.genre.split(",").map((s) => s.trim()).filter(Boolean) : formData.genre,
+      cast:
+        typeof formData.cast === "string"
+          ? formData.cast
+              .split(",")
+              .map((s) => s.trim())
+              .filter(Boolean)
+          : formData.cast,
+      genre:
+        typeof formData.genre === "string"
+          ? formData.genre
+              .split(",")
+              .map((s) => s.trim())
+              .filter(Boolean)
+          : formData.genre,
     };
 
     try {
@@ -109,18 +292,25 @@ export default function ManageMovies() {
     setFormData({
       title: m.title || m.movieName || "",
       language: m.language || "Hindi",
-      genre: Array.isArray(m.genre) ? m.genre.join(", ") : m.genre || "Action",
+      genre: Array.isArray(m.genre)
+        ? m.genre.join(", ")
+        : Array.isArray(m.genres)
+        ? m.genres.join(", ")
+        : m.genre || "Action",
       certification: m.certification || "U/A",
       duration: m.duration || m.runtime || 150,
       theatricalStatus: m.theatricalStatus || "Now Showing",
       isAdvanceBooking: Boolean(m.isAdvanceBooking),
       director: m.director || "",
       cast: Array.isArray(m.cast) ? m.cast.join(", ") : m.cast || "",
-      releaseDate: m.releaseDate ? new Date(m.releaseDate).toISOString().split("T")[0] : "",
+      releaseDate: m.releaseDate
+        ? new Date(m.releaseDate).toISOString().split("T")[0]
+        : "",
       poster: m.poster || m.media || "",
       description: m.description || "",
     });
-    window.scrollTo({ top: 0, behavior: "smooth" });
+    const formEl = document.getElementById("movie-form-section");
+    if (formEl) formEl.scrollIntoView({ behavior: "smooth" });
   };
 
   const confirmDeleteMovie = async () => {
@@ -149,6 +339,17 @@ export default function ManageMovies() {
     currentPage * itemsPerPage
   );
 
+  // Filtered available posters inside poster modal
+  const filteredPosters = useMemo(() => {
+    if (!posterSearch.trim()) return availablePosters.slice(0, 100);
+    const q = posterSearch.toLowerCase().trim();
+    return availablePosters.filter((p) => {
+      const title = (p.title || "").toLowerCase();
+      const lang = (p.language || "").toLowerCase();
+      return title.includes(q) || lang.includes(q);
+    });
+  }, [availablePosters, posterSearch]);
+
   return (
     <div className="container py-4 fade-in" style={{ maxWidth: "1150px" }}>
       {/* Top Admin Navigation */}
@@ -167,20 +368,221 @@ export default function ManageMovies() {
         </Link>
       </div>
 
-      {/* Add / Edit Movie Card with Poster Preview */}
-      <div className="glass-panel p-4 p-md-5 mb-5" style={{ background: "#151828" }}>
-        <h4 className="text-white fw-bold text-center mb-4" style={{ color: "#e50914" }}>
-          {editingId ? "Edit Movie Details" : "Add Movie to Catalog"}
-        </h4>
+      {/* 1. Quick Movie Selection & TMDB Autofill Section */}
+      <div className="glass-panel p-4 mb-4" style={{ background: "#131726", borderColor: "rgba(229, 9, 20, 0.25)" }}>
+        <div className="d-flex justify-content-between align-items-center mb-3">
+          <div>
+            <h5 className="text-white fw-bold mb-1">
+              <i className="fa-solid fa-bolt text-warning me-2"></i>
+              Select Existing Movie or TMDB Catalog to Autofill
+            </h5>
+            <div className="text-secondary small">
+              Choose from existing database movies or verified TMDB blockbusters to automatically populate details without manual typing.
+            </div>
+          </div>
+          <button
+            type="button"
+            onClick={() => setShowCatalogPicker((prev) => !prev)}
+            className="btn btn-sm btn-secondary-cinema"
+          >
+            {showCatalogPicker ? "Collapse Picker" : "Expand Picker"}
+          </button>
+        </div>
+
+        {showCatalogPicker && (
+          <div>
+            {/* Search and Filters */}
+            <div className="row g-2 mb-3">
+              <div className="col-12 col-md-7">
+                <div className="input-group">
+                  <span className="input-group-text bg-dark border-secondary text-secondary">
+                    <i className="fa-solid fa-magnifying-glass"></i>
+                  </span>
+                  <input
+                    type="text"
+                    className="form-control cinema-input"
+                    placeholder="Search existing movies or TMDB catalog (e.g. Inception, Fighter, Jawan, Drishyam)..."
+                    value={catalogSearch}
+                    onChange={(e) => setCatalogSearch(e.target.value)}
+                  />
+                  {catalogSearch && (
+                    <button
+                      className="btn btn-outline-secondary"
+                      onClick={() => setCatalogSearch("")}
+                    >
+                      Clear
+                    </button>
+                  )}
+                </div>
+              </div>
+              <div className="col-12 col-md-5 d-flex gap-2 justify-content-md-end">
+                <button
+                  type="button"
+                  onClick={() => setCatalogFilter("all")}
+                  className={`btn btn-sm ${catalogFilter === "all" ? "btn-danger" : "btn-secondary-cinema"}`}
+                >
+                  All ({movies.length + TMDB_CATALOG_PRESETS.length})
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setCatalogFilter("database")}
+                  className={`btn btn-sm ${catalogFilter === "database" ? "btn-danger" : "btn-secondary-cinema"}`}
+                >
+                  In Database ({movies.length})
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setCatalogFilter("tmdb")}
+                  className={`btn btn-sm ${catalogFilter === "tmdb" ? "btn-danger" : "btn-secondary-cinema"}`}
+                >
+                  TMDB Presets ({TMDB_CATALOG_PRESETS.length})
+                </button>
+              </div>
+            </div>
+
+            {/* Horizontal Scrollable Movie Cards */}
+            <div
+              className="d-flex gap-3 overflow-auto pb-3 pt-1"
+              style={{
+                scrollbarWidth: "thin",
+                scrollbarColor: "#e50914 #151828",
+              }}
+            >
+              {combinedCatalogList.slice(0, 16).map((m, idx) => {
+                const title = m.title || m.movieName;
+                const poster = getPosterUrl(m);
+                const isDb = m.isDatabase || Boolean(m._id);
+                return (
+                  <div
+                    key={`${title}-${idx}`}
+                    onClick={() => handleSelectTemplateMovie(m)}
+                    className="glass-card p-2 flex-shrink-0 cursor-pointer text-start"
+                    style={{
+                      width: "185px",
+                      background: "#181b2e",
+                      border: "1px solid rgba(255, 255, 255, 0.1)",
+                      borderRadius: "8px",
+                      cursor: "pointer",
+                      transition: "transform 0.2s, border-color 0.2s",
+                    }}
+                    onMouseEnter={(e) => {
+                      e.currentTarget.style.borderColor = "#e50914";
+                      e.currentTarget.style.transform = "translateY(-3px)";
+                    }}
+                    onMouseLeave={(e) => {
+                      e.currentTarget.style.borderColor = "rgba(255, 255, 255, 0.1)";
+                      e.currentTarget.style.transform = "translateY(0)";
+                    }}
+                    title="Click to automatically fill movie details"
+                  >
+                    <div
+                      style={{
+                        height: "170px",
+                        overflow: "hidden",
+                        borderRadius: "6px",
+                        backgroundColor: "#111422",
+                      }}
+                    >
+                      <img
+                        src={poster}
+                        alt={title}
+                        style={{ width: "100%", height: "100%", objectFit: "cover" }}
+                        onError={(e) => {
+                          e.currentTarget.onerror = null;
+                          e.currentTarget.src = createTitlePosterSvg(title);
+                        }}
+                      />
+                    </div>
+                    <div className="pt-2">
+                      <div className="d-flex justify-content-between align-items-center mb-1">
+                        <span
+                          className={`badge ${isDb ? "bg-primary" : "bg-danger"}`}
+                          style={{ fontSize: "0.6rem" }}
+                        >
+                          {isDb ? "In Database" : "TMDB Autofill"}
+                        </span>
+                        <span className="text-secondary" style={{ fontSize: "0.68rem" }}>
+                          {m.releaseYear || "2024"}
+                        </span>
+                      </div>
+                      <h6
+                        className="text-white fw-bold mb-1 text-truncate"
+                        style={{ fontSize: "0.82rem" }}
+                        title={title}
+                      >
+                        {title}
+                      </h6>
+                      <div className="text-secondary small d-flex justify-content-between" style={{ fontSize: "0.7rem" }}>
+                        <span>{m.language || "Hindi"}</span>
+                        <span className="text-danger fw-semibold">
+                          {m.theatricalStatus || "Now Showing"}
+                        </span>
+                      </div>
+                      <button
+                        type="button"
+                        className="btn btn-sm btn-outline-danger w-100 mt-2 py-1"
+                        style={{ fontSize: "0.72rem" }}
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          handleSelectTemplateMovie(m);
+                        }}
+                      >
+                        <i className="fa-solid fa-wand-magic-sparkles me-1"></i>
+                        {isDb ? "Edit Movie" : "Autofill Fields"}
+                      </button>
+                    </div>
+                  </div>
+                );
+              })}
+            </div>
+            {combinedCatalogList.length === 0 && (
+              <div className="text-center py-3 text-secondary small">
+                No matching movies found in database or TMDB presets.
+              </div>
+            )}
+          </div>
+        )}
+      </div>
+
+      {/* 2. Add / Edit Movie Form with Live Poster Preview and Poster Picker */}
+      <div
+        id="movie-form-section"
+        className="glass-panel p-4 p-md-5 mb-5"
+        style={{ background: "#151828" }}
+      >
+        <div className="d-flex justify-content-between align-items-center mb-4 border-bottom border-secondary border-opacity-25 pb-3">
+          <div>
+            <h4 className="text-white fw-bold mb-1" style={{ color: "#e50914" }}>
+              {editingId ? "Edit Movie Details" : "Add Movie to Catalog"}
+            </h4>
+            <div className="text-secondary small">
+              {editingId
+                ? "Editing existing database record. All changes update across shows."
+                : "New movie will be verified and added to the cinema catalog."}
+            </div>
+          </div>
+          {editingId && (
+            <button
+              type="button"
+              onClick={() => {
+                setEditingId(null);
+                setFormData(initialForm);
+              }}
+              className="btn btn-sm btn-secondary-cinema"
+            >
+              Cancel Edit & Add New
+            </button>
+          )}
+        </div>
 
         {error && <div className="alert alert-danger py-2 small mb-3">{error}</div>}
         {successMsg && <div className="alert alert-success py-2 small mb-3">{successMsg}</div>}
 
         <form onSubmit={handleSubmit}>
-          {/* Poster Preview Box on Top */}
-          <div className="text-center mb-4">
+          {/* Live Poster Preview Box and Gallery Selector */}
+          <div className="d-flex flex-column align-items-center mb-4">
             <div
-              className="mx-auto rounded-3 d-flex align-items-center justify-content-center overflow-hidden border shadow"
+              className="rounded-3 d-flex align-items-center justify-content-center overflow-hidden border shadow mb-2"
               style={{
                 width: "160px",
                 height: "230px",
@@ -201,15 +603,39 @@ export default function ManageMovies() {
               ) : (
                 <div className="text-center p-3 text-secondary">
                   <i className="fa-regular fa-image fs-1 mb-2"></i>
-                  <div style={{ fontSize: "0.75rem" }}>Poster Preview</div>
+                  <div style={{ fontSize: "0.75rem" }}>Live Poster Preview</div>
                 </div>
+              )}
+            </div>
+
+            <div className="d-flex gap-2">
+              <button
+                type="button"
+                onClick={handleOpenPosterModal}
+                className="btn btn-sm btn-secondary-cinema"
+                style={{ fontSize: "0.78rem" }}
+              >
+                <i className="fa-regular fa-images me-1 text-danger"></i>
+                Browse Existing Posters
+              </button>
+              {formData.poster && (
+                <button
+                  type="button"
+                  onClick={() => setFormData((prev) => ({ ...prev, poster: "" }))}
+                  className="btn btn-sm btn-outline-secondary"
+                  style={{ fontSize: "0.78rem" }}
+                >
+                  Clear Poster
+                </button>
               )}
             </div>
           </div>
 
           <div className="row g-3">
             <div className="col-12 col-md-6">
-              <label className="text-secondary small fw-bold mb-1 d-block">Movie Title *</label>
+              <label className="text-secondary small fw-bold mb-1 d-block">
+                Movie Title <span className="text-danger">*</span>
+              </label>
               <input
                 type="text"
                 className="form-control cinema-input"
@@ -221,7 +647,9 @@ export default function ManageMovies() {
             </div>
 
             <div className="col-12 col-md-3">
-              <label className="text-secondary small fw-bold mb-1 d-block">Language *</label>
+              <label className="text-secondary small fw-bold mb-1 d-block">
+                Language <span className="text-danger">*</span>
+              </label>
               <input
                 type="text"
                 className="form-control cinema-input"
@@ -314,15 +742,38 @@ export default function ManageMovies() {
               />
             </div>
 
+            {/* Poster URL with Inline Browse Button */}
             <div className="col-12">
-              <label className="text-secondary small fw-bold mb-1 d-block">Poster Image URL</label>
-              <input
-                type="url"
-                className="form-control cinema-input"
-                placeholder="https://image.tmdb.org/t/p/w500/..."
-                value={formData.poster}
-                onChange={(e) => setFormData({ ...formData, poster: e.target.value })}
-              />
+              <div className="d-flex justify-content-between align-items-center mb-1">
+                <label className="text-secondary small fw-bold mb-0">Poster Image URL</label>
+                <button
+                  type="button"
+                  onClick={handleOpenPosterModal}
+                  className="btn btn-link btn-sm text-danger p-0 text-decoration-none"
+                  style={{ fontSize: "0.78rem" }}
+                >
+                  <i className="fa-regular fa-images me-1"></i> Choose from Existing Posters
+                </button>
+              </div>
+              <div className="input-group">
+                <input
+                  type="text"
+                  className="form-control cinema-input"
+                  placeholder="https://image.tmdb.org/t/p/w780/... or /posters/..."
+                  value={formData.poster}
+                  onChange={(e) => setFormData({ ...formData, poster: e.target.value })}
+                />
+                <button
+                  type="button"
+                  className="btn btn-secondary-cinema"
+                  onClick={handleOpenPosterModal}
+                >
+                  Browse Posters
+                </button>
+              </div>
+              <span className="text-secondary" style={{ fontSize: "0.72rem" }}>
+                Select from verified TMDB posters or enter a custom image URL.
+              </span>
             </div>
 
             <div className="col-12">
@@ -369,7 +820,7 @@ export default function ManageMovies() {
         </form>
       </div>
 
-      {/* Existing Movies Catalog Section */}
+      {/* 3. Existing Movies Catalog Section */}
       <div className="glass-panel p-4 mb-4">
         <div className="d-flex flex-column flex-sm-row justify-content-between align-items-sm-center gap-2 mb-4">
           <div>
@@ -462,6 +913,124 @@ export default function ManageMovies() {
           totalItems={filteredMovies.length}
         />
       </div>
+
+      {/* 4. Poster Gallery Picker Modal */}
+      {posterModalOpen && (
+        <div
+          className="modal fade show d-block"
+          tabIndex="-1"
+          style={{ backgroundColor: "rgba(0, 0, 0, 0.8)", zIndex: 1060 }}
+        >
+          <div className="modal-dialog modal-lg modal-dialog-centered modal-dialog-scrollable">
+            <div
+              className="modal-content text-white"
+              style={{ backgroundColor: "#151828", borderColor: "rgba(255, 255, 255, 0.15)" }}
+            >
+              <div className="modal-header border-secondary border-opacity-25">
+                <div>
+                  <h5 className="modal-title fw-bold">Select Existing Movie Poster</h5>
+                  <div className="text-secondary small">
+                    Browse posters from database catalog and verified TMDB synchronized blockbusters
+                  </div>
+                </div>
+                <button
+                  type="button"
+                  className="btn-close btn-close-white"
+                  onClick={() => setPosterModalOpen(false)}
+                ></button>
+              </div>
+
+              <div className="modal-body p-4">
+                {/* Search posters */}
+                <div className="mb-3">
+                  <input
+                    type="text"
+                    className="form-control cinema-input"
+                    placeholder="Search poster by movie title (e.g. Inception, Fighter, Jawan)..."
+                    value={posterSearch}
+                    onChange={(e) => setPosterSearch(e.target.value)}
+                  />
+                </div>
+
+                {loadingPosters ? (
+                  <LoadingSpinner message="Loading poster gallery..." />
+                ) : filteredPosters.length === 0 ? (
+                  <div className="text-center py-5 text-secondary">
+                    No matching posters found.
+                  </div>
+                ) : (
+                  <div className="row row-cols-3 row-cols-sm-4 row-cols-md-5 g-3">
+                    {filteredPosters.map((p, pIdx) => {
+                      const displayTitle = p.title || `Poster ${pIdx + 1}`;
+                      const isSelected = formData.poster === p.poster;
+                      return (
+                        <div key={`${p.poster}-${pIdx}`} className="col">
+                          <div
+                            onClick={() => handleSelectPoster(p.poster)}
+                            className="glass-card p-1 text-center cursor-pointer h-100 d-flex flex-column"
+                            style={{
+                              border: isSelected
+                                ? "2px solid #e50914"
+                                : "1px solid rgba(255, 255, 255, 0.1)",
+                              backgroundColor: isSelected ? "#2a151d" : "#191c2c",
+                              borderRadius: "6px",
+                              cursor: "pointer",
+                            }}
+                          >
+                            <div
+                              style={{
+                                height: "135px",
+                                overflow: "hidden",
+                                borderRadius: "4px",
+                                backgroundColor: "#111422",
+                              }}
+                            >
+                              <img
+                                src={p.poster}
+                                alt={displayTitle}
+                                style={{ width: "100%", height: "100%", objectFit: "cover" }}
+                                onError={(e) => {
+                                  e.currentTarget.onerror = null;
+                                  e.currentTarget.src = createTitlePosterSvg(displayTitle);
+                                }}
+                              />
+                            </div>
+                            <div className="p-1 mt-auto">
+                              <div
+                                className="text-white text-truncate small fw-semibold"
+                                style={{ fontSize: "0.72rem" }}
+                                title={displayTitle}
+                              >
+                                {displayTitle}
+                              </div>
+                              <span
+                                className="badge bg-secondary text-light mt-1"
+                                style={{ fontSize: "0.58rem" }}
+                              >
+                                {p.source || "Database"}
+                              </span>
+                            </div>
+                          </div>
+                        </div>
+                      );
+                    })}
+                  </div>
+                )}
+              </div>
+
+              <div className="modal-footer border-secondary border-opacity-25">
+                <button
+                  type="button"
+                  className="btn btn-secondary-cinema"
+                  onClick={() => setPosterModalOpen(false)}
+                >
+                  Close
+                </button>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
 
       {/* Delete Confirmation Modal */}
       <ConfirmModal

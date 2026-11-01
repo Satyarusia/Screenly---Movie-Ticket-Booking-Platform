@@ -6,7 +6,7 @@ import LoadingSpinner from "../../components/LoadingSpinner";
 import ConfirmModal from "../../components/ConfirmModal";
 import Pagination from "../../components/Pagination";
 import AdminNav from "../../components/AdminNav";
-import { getPosterUrl, handleImageError } from "../../utils/tmdbHelper";
+import { getPosterUrl, handleImageError, createTitlePosterSvg } from "../../utils/tmdbHelper";
 import toast from "react-hot-toast";
 
 const FORMAT_OPTIONS = ["2D", "3D", "IMAX", "IMAX 3D", "Dolby Atmos", "4DX", "Other"];
@@ -56,6 +56,11 @@ export default function ManageShows() {
   const [editingShow, setEditingShow] = useState(null);
   const [submitting, setSubmitting] = useState(false);
   const [forceConfirmed, setForceConfirmed] = useState(false);
+
+  // Movie Picker Modal State for Add / Edit Show
+  const [moviePickerOpen, setMoviePickerOpen] = useState(false);
+  const [moviePickerSearch, setMoviePickerSearch] = useState("");
+  const [moviePickerFilter, setMoviePickerFilter] = useState("all");
 
   // View Seat Map Modal State
   const [viewingShow, setViewingShow] = useState(null);
@@ -172,6 +177,44 @@ export default function ManageShows() {
       },
       basePrice: defaultPrices.lower || 150,
     }));
+  };
+
+  // Derived selected movie object for live preview and auto-population
+  const selectedMovieObj = useMemo(() => {
+    return movies.find((m) => String(m._id) === String(formData.movie));
+  }, [movies, formData.movie]);
+
+  // Derived filtered movies for the movie picker modal
+  const filteredPickerMovies = useMemo(() => {
+    return movies.filter((m) => {
+      const title = (m.title || m.movieName || "").toLowerCase();
+      const lang = (m.language || "").toLowerCase();
+      const genre = Array.isArray(m.genre)
+        ? m.genre.join(" ").toLowerCase()
+        : (m.genre || "").toLowerCase();
+      const q = moviePickerSearch.toLowerCase().trim();
+      const matchesSearch = !q || title.includes(q) || lang.includes(q) || genre.includes(q);
+
+      if (!matchesSearch) return false;
+      if (moviePickerFilter === "now-showing") {
+        return (m.theatricalStatus || "Now Showing") === "Now Showing";
+      }
+      if (moviePickerFilter === "coming-soon") {
+        return (m.theatricalStatus || "") === "Coming Soon";
+      }
+      return true;
+    });
+  }, [movies, moviePickerSearch, moviePickerFilter]);
+
+  const handleSelectMovieFromPicker = (selectedMovie) => {
+    setFormData((prev) => ({
+      ...prev,
+      movie: selectedMovie._id,
+      language: selectedMovie.language || "Hindi",
+      durationMinutes: selectedMovie.duration || selectedMovie.runtime || 150,
+    }));
+    setMoviePickerOpen(false);
+    toast.success(`Selected movie: "${selectedMovie.title || selectedMovie.movieName}"`);
   };
 
   // Handle movie change in form: auto update language, duration, and default format
@@ -315,8 +358,13 @@ export default function ManageShows() {
   const handleSubmitShow = async (e) => {
     e.preventDefault();
 
-    if (!formData.movie || !formData.theatre) {
-      toast.error("Please select both a movie and a multiplex theatre.");
+    if (!formData.movie) {
+      toast.error("Please select an existing movie. A show cannot be scheduled without a movie.");
+      return;
+    }
+
+    if (!formData.theatre) {
+      toast.error("Please select a multiplex theatre venue.");
       return;
     }
 
@@ -1288,23 +1336,151 @@ export default function ManageShows() {
                   )}
 
                   <div className="row g-3">
-                    {/* 1. Movie Selector */}
-                    <div className="col-12 col-md-6">
-                      <label className="text-secondary small fw-bold mb-1 d-block">
-                        Select Movie <span className="text-danger">*</span>
-                      </label>
-                      <select
-                        className="form-select cinema-input"
-                        value={formData.movie}
-                        onChange={(e) => handleMovieChange(e.target.value)}
-                        required
-                      >
-                        {movies.map((m) => (
-                          <option key={m._id} value={m._id}>
-                            {m.title || m.movieName} ({m.language || "Hindi"}) &mdash; {m.certification || "U/A"}
-                          </option>
-                        ))}
-                      </select>
+                    {/* 1. Selected Movie Card & Picker */}
+                    <div className="col-12">
+                      <div className="d-flex justify-content-between align-items-center mb-1">
+                        <label className="text-secondary small fw-bold mb-0">
+                          Selected Movie <span className="text-danger">*</span>
+                        </label>
+                        <button
+                          type="button"
+                          onClick={() => setMoviePickerOpen(true)}
+                          className="btn btn-link btn-sm text-danger p-0 text-decoration-none fw-semibold"
+                          style={{ fontSize: "0.8rem" }}
+                        >
+                          <i className="fa-solid fa-film me-1"></i> Browse Movie Catalog
+                        </button>
+                      </div>
+
+                      {/* Selected Movie Preview Card */}
+                      {selectedMovieObj ? (
+                        <div
+                          className="glass-card p-3 mb-2 d-flex flex-column flex-sm-row gap-3 align-items-sm-center"
+                          style={{
+                            backgroundColor: "#191c2c",
+                            border: "1px solid rgba(229, 9, 20, 0.35)",
+                            borderRadius: "8px",
+                          }}
+                        >
+                          {/* Live Poster Thumbnail */}
+                          <div
+                            className="rounded overflow-hidden flex-shrink-0 border border-secondary border-opacity-25"
+                            style={{ width: "65px", height: "92px", backgroundColor: "#111422" }}
+                          >
+                            <img
+                              src={getPosterUrl(selectedMovieObj)}
+                              alt={selectedMovieObj.title || selectedMovieObj.movieName}
+                              style={{ width: "100%", height: "100%", objectFit: "cover" }}
+                              onError={(e) => {
+                                e.currentTarget.onerror = null;
+                                e.currentTarget.src = createTitlePosterSvg(
+                                  selectedMovieObj.title || selectedMovieObj.movieName
+                                );
+                              }}
+                            />
+                          </div>
+
+                          {/* Movie Details */}
+                          <div className="flex-grow-1 min-w-0">
+                            <div className="d-flex flex-wrap align-items-center gap-2 mb-1">
+                              <h5 className="text-white fw-bold mb-0 text-truncate">
+                                {selectedMovieObj.title || selectedMovieObj.movieName}
+                              </h5>
+                              <span className="badge bg-danger" style={{ fontSize: "0.68rem" }}>
+                                {selectedMovieObj.theatricalStatus || "Now Showing"}
+                              </span>
+                              <span className="badge bg-secondary" style={{ fontSize: "0.68rem" }}>
+                                {selectedMovieObj.certification || "U/A"}
+                              </span>
+                            </div>
+
+                            <div
+                              className="text-secondary small d-flex flex-wrap gap-x-3 gap-y-1 mb-1"
+                              style={{ fontSize: "0.75rem" }}
+                            >
+                              <span>
+                                <i className="fa-solid fa-language me-1 text-danger"></i>
+                                {selectedMovieObj.language || "Hindi"}
+                              </span>
+                              <span>&bull;</span>
+                              <span>
+                                <i className="fa-regular fa-clock me-1 text-warning"></i>
+                                {selectedMovieObj.duration || 150} mins
+                              </span>
+                              <span>&bull;</span>
+                              <span>
+                                <i className="fa-solid fa-calendar me-1 text-info"></i>
+                                {selectedMovieObj.releaseDate
+                                  ? new Date(selectedMovieObj.releaseDate).getFullYear()
+                                  : "2024"}
+                              </span>
+                              <span>&bull;</span>
+                              <span>
+                                <i className="fa-solid fa-tags me-1 text-success"></i>
+                                {Array.isArray(selectedMovieObj.genre)
+                                  ? selectedMovieObj.genre.join(", ")
+                                  : selectedMovieObj.genre || "Action"}
+                              </span>
+                            </div>
+
+                            <div className="d-flex align-items-center gap-2 mt-1">
+                              <span
+                                className="badge bg-dark text-secondary border border-secondary border-opacity-25"
+                                style={{ fontSize: "0.65rem" }}
+                              >
+                                Movie ID: {selectedMovieObj._id}
+                              </span>
+                            </div>
+                          </div>
+
+                          {/* Change Movie Button */}
+                          <div className="flex-shrink-0">
+                            <button
+                              type="button"
+                              onClick={() => setMoviePickerOpen(true)}
+                              className="btn btn-sm btn-secondary-cinema w-100"
+                            >
+                              <i className="fa-solid fa-arrows-rotate me-1"></i> Change Movie
+                            </button>
+                          </div>
+                        </div>
+                      ) : (
+                        <div
+                          onClick={() => setMoviePickerOpen(true)}
+                          className="glass-card p-3 mb-2 text-center cursor-pointer border border-dashed border-danger border-opacity-50"
+                          style={{ backgroundColor: "#191c2c", cursor: "pointer" }}
+                        >
+                          <i className="fa-solid fa-clapperboard fs-3 text-danger mb-2"></i>
+                          <div className="text-white fw-bold small">No Movie Selected</div>
+                          <div className="text-secondary small mb-2">
+                            Click to browse cinema catalog and choose a movie for this screening.
+                          </div>
+                          <button type="button" className="btn btn-sm btn-cinema">
+                            <i className="fa-solid fa-magnifying-glass me-1"></i> Select Movie from Catalog
+                          </button>
+                        </div>
+                      )}
+
+                      {/* Quick Dropdown Fallback */}
+                      <div className="d-flex align-items-center gap-2 mt-1">
+                        <span className="text-secondary small" style={{ fontSize: "0.72rem" }}>
+                          Or switch via dropdown:
+                        </span>
+                        <select
+                          className="form-select form-select-sm cinema-input flex-grow-1"
+                          value={formData.movie}
+                          onChange={(e) => handleMovieChange(e.target.value)}
+                          required
+                          style={{ fontSize: "0.78rem" }}
+                        >
+                          <option value="" disabled>-- Select Movie --</option>
+                          {movies.map((m) => (
+                            <option key={m._id} value={m._id}>
+                              {m.title || m.movieName} ({m.language || "Hindi"}) &mdash; {m.certification || "U/A"}
+                            </option>
+                          ))}
+                        </select>
+                      </div>
                     </div>
 
                     {/* 2. Multiplex Theatre Selector */}
@@ -1689,6 +1865,217 @@ export default function ManageShows() {
                   </button>
                 </div>
               </form>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* ================= MODAL: SEARCHABLE MOVIE PICKER ================= */}
+      {moviePickerOpen && (
+        <div
+          className="modal fade show d-block"
+          tabIndex="-1"
+          style={{ backgroundColor: "rgba(0, 0, 0, 0.85)", zIndex: 1070 }}
+        >
+          <div className="modal-dialog modal-lg modal-dialog-centered modal-dialog-scrollable">
+            <div
+              className="modal-content text-white"
+              style={{ backgroundColor: "#151828", borderColor: "rgba(255, 255, 255, 0.15)" }}
+            >
+              <div className="modal-header border-secondary border-opacity-25">
+                <div>
+                  <h5 className="modal-title fw-bold">Select Movie from Database Catalog</h5>
+                  <div className="text-secondary small">
+                    Choose an existing movie to schedule. Poster, duration, language, and details are auto-populated.
+                  </div>
+                </div>
+                <button
+                  type="button"
+                  className="btn-close btn-close-white"
+                  onClick={() => setMoviePickerOpen(false)}
+                ></button>
+              </div>
+
+              <div className="modal-body p-4">
+                {/* Search & Filter pills */}
+                <div className="row g-2 mb-3">
+                  <div className="col-12 col-md-7">
+                    <div className="input-group">
+                      <span className="input-group-text bg-dark border-secondary text-secondary">
+                        <i className="fa-solid fa-magnifying-glass"></i>
+                      </span>
+                      <input
+                        type="text"
+                        className="form-control cinema-input"
+                        placeholder="Search movie by title, genre, or language..."
+                        value={moviePickerSearch}
+                        onChange={(e) => setMoviePickerSearch(e.target.value)}
+                      />
+                      {moviePickerSearch && (
+                        <button
+                          className="btn btn-outline-secondary"
+                          onClick={() => setMoviePickerSearch("")}
+                        >
+                          Clear
+                        </button>
+                      )}
+                    </div>
+                  </div>
+                  <div className="col-12 col-md-5 d-flex gap-2 justify-content-md-end">
+                    <button
+                      type="button"
+                      onClick={() => setMoviePickerFilter("all")}
+                      className={`btn btn-sm ${
+                        moviePickerFilter === "all" ? "btn-danger" : "btn-secondary-cinema"
+                      }`}
+                    >
+                      All ({movies.length})
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => setMoviePickerFilter("now-showing")}
+                      className={`btn btn-sm ${
+                        moviePickerFilter === "now-showing" ? "btn-danger" : "btn-secondary-cinema"
+                      }`}
+                    >
+                      Now Showing
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => setMoviePickerFilter("coming-soon")}
+                      className={`btn btn-sm ${
+                        moviePickerFilter === "coming-soon" ? "btn-danger" : "btn-secondary-cinema"
+                      }`}
+                    >
+                      Coming Soon
+                    </button>
+                  </div>
+                </div>
+
+                {/* Movie Cards Grid */}
+                {filteredPickerMovies.length === 0 ? (
+                  <div className="text-center py-5 text-secondary">
+                    No movies match your search criteria.
+                  </div>
+                ) : (
+                  <div className="row row-cols-1 row-cols-sm-2 row-cols-md-3 g-3">
+                    {filteredPickerMovies.map((m) => {
+                      const title = m.title || m.movieName;
+                      const poster = getPosterUrl(m);
+                      const isSelected = String(formData.movie) === String(m._id);
+                      const releaseYear = m.releaseDate
+                        ? new Date(m.releaseDate).getFullYear()
+                        : "2024";
+
+                      return (
+                        <div key={m._id} className="col">
+                          <div
+                            onClick={() => handleSelectMovieFromPicker(m)}
+                            className="glass-card p-2 h-100 d-flex flex-column justify-content-between cursor-pointer"
+                            style={{
+                              backgroundColor: isSelected ? "#2a151d" : "#191c2c",
+                              border: isSelected
+                                ? "2px solid #e50914"
+                                : "1px solid rgba(255, 255, 255, 0.1)",
+                              borderRadius: "8px",
+                              cursor: "pointer",
+                              transition: "all 0.2s",
+                            }}
+                            onMouseEnter={(e) => {
+                              if (!isSelected) e.currentTarget.style.borderColor = "#e50914";
+                            }}
+                            onMouseLeave={(e) => {
+                              if (!isSelected)
+                                e.currentTarget.style.borderColor =
+                                  "rgba(255, 255, 255, 0.1)";
+                            }}
+                          >
+                            <div className="d-flex gap-2 mb-2">
+                              <div
+                                className="rounded overflow-hidden flex-shrink-0"
+                                style={{
+                                  width: "55px",
+                                  height: "78px",
+                                  backgroundColor: "#111422",
+                                }}
+                              >
+                                <img
+                                  src={poster}
+                                  alt={title}
+                                  style={{
+                                    width: "100%",
+                                    height: "100%",
+                                    objectFit: "cover",
+                                  }}
+                                  onError={(e) => {
+                                    e.currentTarget.onerror = null;
+                                    e.currentTarget.src = createTitlePosterSvg(title);
+                                  }}
+                                />
+                              </div>
+                              <div className="min-w-0 flex-grow-1">
+                                <span
+                                  className={`badge mb-1 ${
+                                    (m.theatricalStatus || "Now Showing") === "Now Showing"
+                                      ? "bg-danger"
+                                      : "bg-primary"
+                                  }`}
+                                  style={{ fontSize: "0.6rem" }}
+                                >
+                                  {m.theatricalStatus || "Now Showing"}
+                                </span>
+                                <h6
+                                  className="text-white fw-bold mb-0 text-truncate"
+                                  title={title}
+                                  style={{ fontSize: "0.82rem" }}
+                                >
+                                  {title}
+                                </h6>
+                                <div
+                                  className="text-secondary small"
+                                  style={{ fontSize: "0.68rem" }}
+                                >
+                                  {m.language || "Hindi"} &bull; {releaseYear}
+                                </div>
+                                <div
+                                  className="text-secondary small"
+                                  style={{ fontSize: "0.68rem" }}
+                                >
+                                  {m.duration || 150}m &bull; {m.certification || "U/A"}
+                                </div>
+                              </div>
+                            </div>
+
+                            <button
+                              type="button"
+                              onClick={(e) => {
+                                e.stopPropagation();
+                                handleSelectMovieFromPicker(m);
+                              }}
+                              className={`btn btn-sm w-100 py-1 ${
+                                isSelected ? "btn-danger" : "btn-secondary-cinema"
+                              }`}
+                              style={{ fontSize: "0.72rem" }}
+                            >
+                              {isSelected ? "Selected" : "Select Movie"}
+                            </button>
+                          </div>
+                        </div>
+                      );
+                    })}
+                  </div>
+                )}
+              </div>
+
+              <div className="modal-footer border-secondary border-opacity-25">
+                <button
+                  type="button"
+                  className="btn btn-secondary-cinema"
+                  onClick={() => setMoviePickerOpen(false)}
+                >
+                  Close
+                </button>
+              </div>
             </div>
           </div>
         </div>
