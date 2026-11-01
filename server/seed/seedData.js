@@ -853,15 +853,15 @@ const seedDB = async () => {
 
     // 1. Seed Admin User
     const adminEmail = "admin@screenly.com";
-    let admin = await User.findOne({
-      $or: [{ email: adminEmail }, { role: "admin" }],
-    });
+    const hashedAdminPassword = await bcrypt.hash("admin123", 10);
+    await User.deleteMany({ email: "admin@imovies.com" });
+
+    let admin = await User.findOne({ email: adminEmail });
     if (!admin) {
-      const hashedPassword = await bcrypt.hash("admin123", 10);
       admin = await User.create({
         name: "Cinema Administrator",
         email: adminEmail,
-        password: hashedPassword,
+        password: hashedAdminPassword,
         phone: "9876543210",
         role: "admin",
       });
@@ -873,31 +873,34 @@ const seedDB = async () => {
       });
       console.log("Default Admin created: admin@screenly.com / admin123");
     } else {
+      admin.name = "Cinema Administrator";
       admin.email = adminEmail;
+      admin.password = hashedAdminPassword;
       admin.role = "admin";
       await admin.save();
-      console.log("Admin account confirmed: admin@screenly.com");
+      console.log("Admin account confirmed: admin@screenly.com / admin123");
     }
 
     // 2. Seed Regular User
     const userEmail = "user@screenly.com";
-    let regularUser = await User.findOne({
-      $or: [{ email: userEmail }, { phone: "9123456789" }],
-    });
+    const hashedUserPassword = await bcrypt.hash("user123", 10);
+    await User.deleteMany({ email: "user@imovies.com" });
+
+    let regularUser = await User.findOne({ email: userEmail });
     if (!regularUser) {
-      const hashedPassword = await bcrypt.hash("user123", 10);
       regularUser = await User.create({
         name: "Rahul Sharma",
         email: userEmail,
-        password: hashedPassword,
+        password: hashedUserPassword,
         phone: "9123456789",
         role: "user",
       });
       console.log("Default User created: user@screenly.com / user123");
     } else {
       regularUser.email = userEmail;
+      regularUser.password = hashedUserPassword;
       await regularUser.save();
-      console.log("User account confirmed: user@screenly.com");
+      console.log("User account confirmed: user@screenly.com / user123");
     }
 
     // 3. Upsert Theatres for all 7 target cities
