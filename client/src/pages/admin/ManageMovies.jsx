@@ -1,5 +1,5 @@
 // client/src/pages/admin/ManageMovies.jsx
-import { useState, useEffect, useCallback, useMemo } from "react";
+import { useState, useEffect, useCallback, useMemo, useRef } from "react";
 import { Link } from "react-router-dom";
 import api from "../../services/api";
 import LoadingSpinner from "../../components/LoadingSpinner";
@@ -36,6 +36,24 @@ export default function ManageMovies() {
   // Confirmation Modal State for Deletion
   const [deleteTarget, setDeleteTarget] = useState(null);
   const [deleting, setDeleting] = useState(false);
+
+  const posterFileInputRef = useRef(null);
+
+  const handlePosterFileUpload = (e) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+    if (!file.type.startsWith("image/")) {
+      toast.error("Please upload a valid image file.");
+      return;
+    }
+    const reader = new FileReader();
+    reader.onload = (event) => {
+      const result = event.target.result;
+      setFormData((prev) => ({ ...prev, poster: result }));
+      toast.success("Poster image uploaded successfully!");
+    };
+    reader.readAsDataURL(file);
+  };
 
   const initialForm = {
     title: "",
@@ -234,7 +252,7 @@ export default function ManageMovies() {
     }
 
     if (!formData.poster) {
-      toast.error("Please select a movie poster using the 'Select Existing Movie' button.");
+      toast.error("Please select a movie from the database or upload a poster image.");
       return;
     }
 
@@ -461,7 +479,15 @@ export default function ManageMovies() {
               )}
             </div>
 
-            <div className="d-flex gap-2">
+            <input
+              type="file"
+              ref={posterFileInputRef}
+              accept="image/*"
+              style={{ display: "none" }}
+              onChange={handlePosterFileUpload}
+            />
+
+            <div className="d-flex gap-2 flex-wrap justify-content-center">
               <button
                 type="button"
                 onClick={() => setMovieModalOpen(true)}
@@ -471,11 +497,20 @@ export default function ManageMovies() {
                 <i className="fa-solid fa-clapperboard me-1"></i>
                 {formData.poster ? "Change Movie & Poster" : "Choose Movie & Poster"}
               </button>
+              <button
+                type="button"
+                onClick={() => posterFileInputRef.current?.click()}
+                className="btn btn-sm btn-secondary-cinema fw-bold"
+                style={{ fontSize: "0.78rem" }}
+                title="Upload local poster image file"
+              >
+                <i className="fa-solid fa-upload me-1"></i> Upload Poster
+              </button>
               {formData.poster && (
                 <button
                   type="button"
                   onClick={() => setFormData((prev) => ({ ...prev, poster: "" }))}
-                  className="btn btn-sm btn-secondary-cinema"
+                  className="btn btn-sm btn-outline-danger"
                   style={{ fontSize: "0.78rem" }}
                 >
                   Clear Poster
@@ -657,7 +692,7 @@ export default function ManageMovies() {
                   </div>
                 </div>
 
-                <div className="d-flex gap-2 flex-shrink-0">
+                <div className="d-flex gap-2 flex-shrink-0 flex-wrap">
                   <button
                     type="button"
                     onClick={() => setMovieModalOpen(true)}
@@ -666,11 +701,19 @@ export default function ManageMovies() {
                     <i className="fa-solid fa-clapperboard me-1"></i>
                     {formData.poster ? "Change Movie / Poster" : "Select Existing Movie"}
                   </button>
+                  <button
+                    type="button"
+                    onClick={() => posterFileInputRef.current?.click()}
+                    className="btn btn-secondary-cinema btn-sm py-2 px-3 fw-bold text-nowrap"
+                    title="Upload poster image from your device"
+                  >
+                    <i className="fa-solid fa-upload me-1"></i> Upload Poster
+                  </button>
                   {formData.poster && (
                     <button
                       type="button"
                       onClick={() => setFormData((prev) => ({ ...prev, poster: "" }))}
-                      className="btn btn-secondary-cinema btn-sm py-2 px-2"
+                      className="btn btn-outline-danger btn-sm py-2 px-2"
                       title="Clear selected poster"
                     >
                       <i className="fa-solid fa-xmark"></i>

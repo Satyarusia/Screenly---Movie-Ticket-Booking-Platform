@@ -1,12 +1,17 @@
 // client/src/pages/admin/AdminDashboard.jsx
-import { useState, useEffect, useCallback, useMemo } from "react";
+import { useState, useEffect, useCallback, useMemo, useRef } from "react";
 import { Link } from "react-router-dom";
 import api from "../../services/api";
 import LoadingSpinner from "../../components/LoadingSpinner";
 import Pagination from "../../components/Pagination";
 import ConfirmModal from "../../components/ConfirmModal";
 import AdminNav from "../../components/AdminNav";
-import { getPosterUrl, getMovieTitle, createTitlePosterSvg } from "../../utils/tmdbHelper";
+import {
+  getPosterUrl,
+  getMovieTitle,
+  createTitlePosterSvg,
+  TMDB_CATALOG_PRESETS,
+} from "../../utils/tmdbHelper";
 import toast from "react-hot-toast";
 
 export default function AdminDashboard() {
@@ -62,6 +67,233 @@ export default function AdminDashboard() {
     description: "",
   };
   const [movieFormData, setMovieFormData] = useState(initialMovieForm);
+  const moviePosterFileRef = useRef(null);
+
+  // Movie Picker Modal State (for both Add Movie and Add Show)
+  const [moviePickerModalOpen, setMoviePickerModalOpen] = useState(false);
+  const [pickerTarget, setPickerTarget] = useState("movie"); // "movie" | "show"
+  const [pickerSearch, setPickerSearch] = useState("");
+  const [pickerLanguage, setPickerLanguage] = useState("All");
+  const [pickerStatus, setPickerStatus] = useState("All");
+  const [pickerPage, setPickerPage] = useState(1);
+  const pickerPageSize = 12;
+
+  // Unified Catalog of all available movies: existing database movies + TMDB verified presets
+  const availableMoviesCatalog = useMemo(() => {
+    const list = [];
+    const seenTitles = new Set();
+
+    // 1. Existing movies from MongoDB
+    movies.forEach((m) => {
+      const title = (m.title || m.movieName || "").trim();
+      const lower = title.toLowerCase();
+      if (!lower) return;
+      seenTitles.add(lower);
+      list.push({
+        ...m,
+        title,
+        movieName: title,
+        source: "Database",
+        isDatabase: true,
+        releaseYear: m.releaseDate ? new Date(m.releaseDate).getFullYear() : "2024",
+      });
+    });
+
+    // 2. TMDB Synchronized Blockbuster Presets
+    TMDB_CATALOG_PRESETS.forEach((p) => {
+      const title = (p.title || p.movieName || "").trim();
+      const lower = title.toLowerCase();
+      const existsInDb = seenTitles.has(lower);
+      list.push({
+        ...p,
+        title,
+        movieName: title,
+        source: existsInDb ? "Database & TMDB" : "TMDB Catalog",
+        isDatabase: existsInDb,
+        releaseYear: p.releaseDate ? new Date(p.releaseDate).getFullYear() : "2024",
+      });
+    });
+
+    return list;
+  }, [movies]);
+
+  // Distinct languages derived dynamically from catalog
+  const distinctLanguages = useMemo(() => {
+    const set = new Set();
+    availableMoviesCatalog.forEach((m) => {
+      if (m.language && typeof m.language === "string") {
+        set.add(m.language.trim());
+      }
+    });
+    return ["All", ...Array.from(set).sort()];
+  }, [availableMoviesCatalog]);
+
+  const distinctStatuses = ["All", "Now Showing", "Coming Soon", "Advance Booking", "Ended"];
+
+  // Filtered movies for the Movie Picker Modal
+  const filteredPickerMovies = useMemo(() => {
+    return availableMoviesCatalog.filter((m) => {
+      const title = (m.title || m.movieName || "").toLowerCase();
+      const lang = (m.language || "").toLowerCase();
+      const genre = Array.isArray(m.genre)
+        ? m.genre.join(" ").toLowerCase()
+        : Array.isArray(m.genres)
+        ? m.genres.join(" ").toLowerCase()
+        : (m.genre || "").toLowerCase();
+      const director = (m.director || "").toLowerCase();
+      const cast = Array.isArray(m.cast)
+        ? m.cast.join(" ").toLowerCase()
+        : (m.cast || "").toLowerCase();
+
+      const q = pickerSearch.toLowerCase().trim();
+      const matchesSearch =
+        !q ||
+        title.includes(q) ||
+        lang.includes(q) ||
+        genre.includes(q) ||
+        director.includes(q) ||
+        cast.includes(q);
+
+      if (!matchesSearch) return false;
+
+      if (pickerLanguage !== "All" && m.language !== pickerLanguage) {
+        return false;
+      }
+
+      if (pickerStatus !== "All" && (m.theatricalStatus || "Now Showing") !== pickerStatus) {
+        return false;
+      }
+
+      return true;
+    });
+  }, [availableMoviesCatalog, pickerSearch, pickerLanguage, pickerStatus]);
+
+  const totalPickerPages = Math.ceil(filteredPickerMovies.length / pickerPageSize) || 1;
+  const paginatedPickerMovies = useMemo(() => {
+    return filteredPickerMovies.slice(
+      (pickerPage - 1) * pickerPageSize,
+      pickerPage * pickerPageSize
+    );
+  }, [filteredPickerMovies, pickerPage, pickerPageSize]);
+
+  useEffect(() => {
+    setPickerPage(1);
+  }, [pickerSearch, pickerLanguage, pickerStatus]);
+
+  const handleOpenMoviePicker = (target = "movie") => {
+    setPickerTarget(target);
+    setPickerSearch("");
+    setPickerLanguage("All");
+    setPickerStatus("All");
+    setPickerPage(1);
+    setMoviePickerModalOpen(true);
+  };
+
+  const handlePosterFileUpload = (e) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+    if (!file.type.startsWith("image/")) {
+      toast.error("Please upload a valid image file.");
+      return;
+    }
+    const reader = new FileReader();
+    reader.onload = (event) => {
+      const result = event.target.result;
+      setMovieFormData((prev) => ({ ...prev, poster: result }));
+      toast.success("Poster image uploaded successfully!");
+    };
+    reader.readAsDataURL(file);
+  };
+
+  const handleSelectMovieFromPicker = async (m) => {
+    if (pickerTarget === "movie") {
+      const titleKey = (m.title || m.movieName || "").trim().toLowerCase();
+      const existingDbMovie = movies.find(
+        (dbM) => (dbM.title || dbM.movieName || "").trim().toLowerCase() === titleKey
+      );
+
+      if (existingDbMovie && !editingMovieId) {
+        setEditingMovieId(existingDbMovie._id);
+        toast.success(
+          `Loaded existing movie "${existingDbMovie.title || existingDbMovie.movieName}" for editing. Duplicate creation prevented.`
+        );
+      } else {
+        toast.success(`Selected "${m.title || m.movieName}"! Poster and movie details auto-populated.`);
+      }
+
+      setMovieFormData((prev) => ({
+        ...prev,
+        title: m.title || m.movieName || "",
+        language: m.language || "Hindi",
+        genre: Array.isArray(m.genre)
+          ? m.genre.join(", ")
+          : Array.isArray(m.genres)
+          ? m.genres.join(", ")
+          : m.genre || "Action, Drama",
+        certification: m.certification || "U/A",
+        duration: m.duration || m.runtime || 150,
+        theatricalStatus: m.theatricalStatus || "Now Showing",
+        isAdvanceBooking: Boolean(m.isAdvanceBooking),
+        director: m.director || "",
+        cast: Array.isArray(m.cast) ? m.cast.join(", ") : m.cast || "",
+        releaseDate: m.releaseDate
+          ? new Date(m.releaseDate).toISOString().split("T")[0]
+          : new Date().toISOString().split("T")[0],
+        poster: m.poster || m.media || "",
+        description: m.description || "",
+      }));
+
+      setMoviePickerModalOpen(false);
+    } else if (pickerTarget === "show") {
+      let targetMovieId = m._id;
+
+      if (!targetMovieId) {
+        try {
+          const res = await api.post("/api/movies", {
+            title: m.title || m.movieName,
+            movieName: m.title || m.movieName,
+            language: m.language || "Hindi",
+            genre: Array.isArray(m.genre) ? m.genre : [m.genre || "Action"],
+            certification: m.certification || "U/A",
+            duration: Number(m.duration || m.runtime) || 150,
+            theatricalStatus: m.theatricalStatus || "Now Showing",
+            poster: m.poster || m.media || "",
+            description: m.description || "",
+            director: m.director || "Director",
+            cast: Array.isArray(m.cast) ? m.cast : [m.cast || "Lead Actor"],
+            releaseDate: m.releaseDate || new Date().toISOString(),
+          });
+          const created = res.data?.movie || res.data;
+          targetMovieId = created._id;
+          fetchAdminData();
+        } catch {
+          targetMovieId = movies[0]?._id;
+        }
+      }
+
+      setNewShowForm((prev) => ({
+        ...prev,
+        movie: targetMovieId,
+        durationMinutes: m.duration || m.runtime || prev.durationMinutes || 150,
+      }));
+      setMoviePickerModalOpen(false);
+      toast.success(`Selected "${m.title || m.movieName}" for show! Poster & duration auto-filled.`);
+    }
+  };
+
+  const selectedShowMovie = useMemo(() => {
+    if (!newShowForm.movie) return movies[0] || null;
+    return movies.find((m) => m._id === newShowForm.movie) || null;
+  }, [newShowForm.movie, movies]);
+
+  const handleShowMovieChange = (movieId) => {
+    const m = movies.find((item) => item._id === movieId);
+    setNewShowForm((prev) => ({
+      ...prev,
+      movie: movieId,
+      durationMinutes: m?.duration || prev.durationMinutes || 150,
+    }));
+  };
 
   const fetchAdminData = useCallback(async () => {
     try {
@@ -119,12 +351,13 @@ export default function AdminDashboard() {
     const tzOffset = d.getTimezoneOffset() * 60000;
     const localIso = new Date(d.getTime() - tzOffset).toISOString().slice(0, 16);
 
+    const firstMovie = movies[0];
     setNewShowForm({
-      movie: movies[0]?._id || "",
+      movie: firstMovie?._id || "",
       theatre: theatres[0]?._id || "",
       screen: "Screen 1",
       showTime: localIso,
-      durationMinutes: 150,
+      durationMinutes: firstMovie?.duration || 150,
     });
     setShowAddModalOpen(true);
   };
@@ -201,6 +434,10 @@ export default function AdminDashboard() {
     e.preventDefault();
     if (!movieFormData.title.trim()) {
       toast.error("Movie title is required.");
+      return;
+    }
+    if (!movieFormData.poster) {
+      toast.error("Please select an existing movie or upload a poster image.");
       return;
     }
 
@@ -725,21 +962,83 @@ export default function AdminDashboard() {
 
               <form onSubmit={handleCreateShowSubmit}>
                 <div className="modal-body py-3">
-                  {/* Select Movie */}
+                  {/* Select Movie with Live Poster & Details Display */}
                   <div className="mb-3">
-                    <label className="form-label small text-secondary fw-semibold">Select Movie</label>
+                    <div className="d-flex justify-content-between align-items-center mb-1">
+                      <label className="form-label small text-secondary fw-semibold mb-0">Select Movie</label>
+                      <button
+                        type="button"
+                        onClick={() => handleOpenMoviePicker("show")}
+                        className="btn btn-sm btn-cinema py-0 px-2"
+                        style={{ fontSize: "0.75rem" }}
+                      >
+                        <i className="fa-solid fa-magnifying-glass me-1"></i> Browse Movie Catalog
+                      </button>
+                    </div>
+
                     <select
-                      className="form-select cinema-input"
+                      className="form-select cinema-input mb-2"
                       value={newShowForm.movie}
-                      onChange={(e) => setNewShowForm({ ...newShowForm, movie: e.target.value })}
+                      onChange={(e) => handleShowMovieChange(e.target.value)}
                       required
                     >
+                      <option value="" disabled>-- Select a Movie --</option>
                       {movies.map((m) => (
                         <option key={m._id} value={m._id}>
-                          {getMovieTitle(m)} ({m.language || "Hindi"})
+                          {getMovieTitle(m)} ({m.language || "Hindi"}) &bull; {m.duration || 150}m
                         </option>
                       ))}
                     </select>
+
+                    {/* Selected Movie Preview Card in Add Show Modal */}
+                    {selectedShowMovie && (
+                      <div
+                        className="p-3 rounded-3 d-flex gap-3 align-items-center"
+                        style={{
+                          background: "rgba(255, 255, 255, 0.03)",
+                          border: "1px solid rgba(229, 9, 20, 0.4)",
+                        }}
+                      >
+                        <div
+                          className="rounded overflow-hidden flex-shrink-0 border border-secondary border-opacity-25"
+                          style={{ width: "52px", height: "74px", backgroundColor: "#111422" }}
+                        >
+                          <img
+                            src={getPosterUrl(selectedShowMovie)}
+                            alt={getMovieTitle(selectedShowMovie)}
+                            style={{ width: "100%", height: "100%", objectFit: "cover" }}
+                            onError={(e) => {
+                              e.currentTarget.onerror = null;
+                              e.currentTarget.src = createTitlePosterSvg(getMovieTitle(selectedShowMovie));
+                            }}
+                          />
+                        </div>
+                        <div className="flex-grow-1 min-w-0">
+                          <div className="d-flex align-items-center gap-2 mb-1 flex-wrap">
+                            <h6 className="text-white fw-bold mb-0 text-truncate">
+                              {getMovieTitle(selectedShowMovie)}
+                            </h6>
+                            <span className="badge bg-danger" style={{ fontSize: "0.65rem" }}>
+                              {selectedShowMovie.theatricalStatus || "Now Showing"}
+                            </span>
+                            <span className="badge bg-secondary" style={{ fontSize: "0.65rem" }}>
+                              {selectedShowMovie.certification || "U/A"}
+                            </span>
+                          </div>
+                          <div className="text-secondary small d-flex flex-wrap gap-2" style={{ fontSize: "0.72rem" }}>
+                            <span><i className="fa-solid fa-language text-danger me-1"></i>{selectedShowMovie.language || "Hindi"}</span>
+                            <span>&bull;</span>
+                            <span><i className="fa-regular fa-clock text-warning me-1"></i>{selectedShowMovie.duration || 150} mins</span>
+                            {selectedShowMovie.genre && (
+                              <>
+                                <span>&bull;</span>
+                                <span className="text-truncate">{Array.isArray(selectedShowMovie.genre) ? selectedShowMovie.genre.join(", ") : selectedShowMovie.genre}</span>
+                              </>
+                            )}
+                          </div>
+                        </div>
+                      </div>
+                    )}
                   </div>
 
                   {/* Select Theatre */}
@@ -922,15 +1221,98 @@ export default function AdminDashboard() {
                         />
                       </div>
 
-                      <div className="mb-2">
-                        <label className="form-label small text-secondary fw-semibold mb-1">Poster URL / Path</label>
-                        <input
-                          type="text"
-                          className="form-control cinema-input"
-                          placeholder="/posters/<tmdbId>.jpg or https://image.tmdb.org/..."
-                          value={movieFormData.poster}
-                          onChange={(e) => setMovieFormData({ ...movieFormData, poster: e.target.value })}
-                        />
+                      {/* Movie Poster & Metadata Picker (Replaces manual URL/Path input) */}
+                      <input
+                        type="file"
+                        ref={moviePosterFileRef}
+                        accept="image/*"
+                        style={{ display: "none" }}
+                        onChange={handlePosterFileUpload}
+                      />
+
+                      <div className="mb-3">
+                        <label className="form-label small text-secondary fw-semibold mb-1 d-block">
+                          Movie Poster &amp; Metadata Selection <span className="text-danger">*</span>
+                        </label>
+                        <div
+                          className="p-3 rounded-3 d-flex flex-column flex-sm-row justify-content-between align-items-sm-center gap-3"
+                          style={{
+                            background: "rgba(255, 255, 255, 0.03)",
+                            border: movieFormData.poster
+                              ? "1px solid rgba(229, 9, 20, 0.5)"
+                              : "1px dashed rgba(255, 255, 255, 0.2)",
+                          }}
+                        >
+                          <div className="d-flex align-items-center gap-3 min-w-0">
+                            {movieFormData.poster ? (
+                              <div
+                                className="rounded overflow-hidden flex-shrink-0 border border-secondary border-opacity-25"
+                                style={{ width: "48px", height: "68px", backgroundColor: "#111422" }}
+                              >
+                                <img
+                                  src={getPosterUrl({ poster: movieFormData.poster, title: movieFormData.title })}
+                                  alt={movieFormData.title || "Poster"}
+                                  style={{ width: "100%", height: "100%", objectFit: "cover" }}
+                                  onError={(e) => {
+                                    e.currentTarget.onerror = null;
+                                    e.currentTarget.src = createTitlePosterSvg(movieFormData.title || "Movie");
+                                  }}
+                                />
+                              </div>
+                            ) : (
+                              <div
+                                className="rounded d-flex align-items-center justify-content-center text-secondary flex-shrink-0 border border-secondary border-opacity-25"
+                                style={{ width: "48px", height: "68px", backgroundColor: "#141726" }}
+                              >
+                                <i className="fa-regular fa-image fs-4"></i>
+                              </div>
+                            )}
+                            <div className="min-w-0">
+                              <div className="text-white fw-bold small text-truncate">
+                                {movieFormData.poster
+                                  ? movieFormData.title || "Poster Selected"
+                                  : "No Poster Selected Yet"}
+                              </div>
+                              <div className="text-secondary small" style={{ fontSize: "0.72rem" }}>
+                                {movieFormData.poster
+                                  ? "Poster loaded. Click to choose another movie or upload an image."
+                                  : "Select from database movies or upload a local image file."}
+                              </div>
+                            </div>
+                          </div>
+
+                          <div className="d-flex gap-2 flex-shrink-0">
+                            <button
+                              type="button"
+                              onClick={() => handleOpenMoviePicker("movie")}
+                              className="btn btn-cinema btn-sm py-1 px-3"
+                              style={{ fontSize: "0.78rem" }}
+                            >
+                              <i className="fa-solid fa-magnifying-glass me-1"></i>
+                              {movieFormData.poster ? "Change Movie" : "Select Existing Movie"}
+                            </button>
+                            <button
+                              type="button"
+                              onClick={() => moviePosterFileRef.current?.click()}
+                              className="btn btn-secondary-cinema btn-sm py-1 px-2"
+                              style={{ fontSize: "0.78rem" }}
+                              title="Upload custom poster image file"
+                            >
+                              <i className="fa-solid fa-upload me-1"></i> Upload Poster
+                            </button>
+                            {movieFormData.poster && (
+                              <button
+                                type="button"
+                                onClick={() => setMovieFormData((prev) => ({ ...prev, poster: "" }))}
+                                className="btn btn-outline-danger btn-sm py-1 px-2"
+                                style={{ fontSize: "0.78rem" }}
+                                title="Clear poster"
+                              >
+                                <i className="fa-solid fa-xmark"></i>
+                              </button>
+                            )}
+                          </div>
+                        </div>
                       </div>
 
                       <div className="mb-2">
@@ -965,11 +1347,30 @@ export default function AdminDashboard() {
                         ) : (
                           <div className="d-flex flex-column align-items-center justify-content-center h-100 text-secondary p-3">
                             <i className="fa-regular fa-image fs-1 mb-2"></i>
-                            <span style={{ fontSize: "0.75rem" }}>Poster Preview</span>
+                            <span style={{ fontSize: "0.75rem" }}>No Poster Selected</span>
                           </div>
                         )}
                       </div>
-                      <span className="text-secondary small">Live Poster Preview</span>
+                      <span className="text-secondary small d-block mb-2">Live Poster Preview</span>
+                      <div className="d-flex flex-column gap-1">
+                        <button
+                          type="button"
+                          onClick={() => handleOpenMoviePicker("movie")}
+                          className="btn btn-sm btn-cinema py-1 px-2"
+                          style={{ fontSize: "0.75rem" }}
+                        >
+                          <i className="fa-solid fa-film me-1"></i>
+                          {movieFormData.poster ? "Change Movie & Poster" : "Choose Movie & Poster"}
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => moviePosterFileRef.current?.click()}
+                          className="btn btn-sm btn-secondary-cinema py-1 px-2"
+                          style={{ fontSize: "0.75rem" }}
+                        >
+                          <i className="fa-solid fa-upload me-1"></i> Upload Poster File
+                        </button>
+                      </div>
                     </div>
                   </div>
                 </div>
@@ -1029,6 +1430,227 @@ export default function AdminDashboard() {
         onConfirm={handleConfirmDeleteMovie}
         onCancel={() => setMovieDeleteTarget(null)}
       />
+
+      {/* ================= MODAL 5: MOVIE PICKER MODAL (FOR ADD MOVIE & ADD SHOW) ================= */}
+      {moviePickerModalOpen && (
+        <div
+          className="modal fade show d-block"
+          tabIndex="-1"
+          style={{ backgroundColor: "rgba(0,0,0,0.88)", zIndex: 1070 }}
+        >
+          <div className="modal-dialog modal-xl modal-dialog-centered modal-dialog-scrollable">
+            <div className="modal-content glass-panel border-0 text-white" style={{ background: "#131627" }}>
+              <div className="modal-header border-secondary border-opacity-25 pb-2">
+                <div>
+                  <h5 className="modal-title fw-bold mb-0">
+                    <i className="fa-solid fa-film text-danger me-2"></i>
+                    {pickerTarget === "movie" ? "Select Existing Movie & Poster" : "Select Movie to Schedule Show"}
+                  </h5>
+                  <small className="text-secondary">
+                    Choose from existing database movies and synchronized TMDB releases
+                  </small>
+                </div>
+                <button
+                  type="button"
+                  className="btn-close btn-close-white"
+                  onClick={() => setMoviePickerModalOpen(false)}
+                ></button>
+              </div>
+
+              <div className="modal-body p-3">
+                {/* Search & Filters */}
+                <div className="row g-2 mb-3">
+                  <div className="col-12 col-md-6">
+                    <div className="input-group input-group-sm">
+                      <span className="input-group-text bg-dark border-secondary border-opacity-25 text-secondary">
+                        <i className="fa-solid fa-magnifying-glass"></i>
+                      </span>
+                      <input
+                        type="text"
+                        className="form-control cinema-input"
+                        placeholder="Search movie title, genre, director, cast..."
+                        value={pickerSearch}
+                        onChange={(e) => setPickerSearch(e.target.value)}
+                        autoFocus
+                      />
+                      {pickerSearch && (
+                        <button
+                          type="button"
+                          className="btn btn-secondary-cinema"
+                          onClick={() => setPickerSearch("")}
+                        >
+                          <i className="fa-solid fa-xmark"></i>
+                        </button>
+                      )}
+                    </div>
+                  </div>
+
+                  <div className="col-6 col-md-3">
+                    <select
+                      className="form-select form-select-sm cinema-input"
+                      value={pickerLanguage}
+                      onChange={(e) => setPickerLanguage(e.target.value)}
+                    >
+                      {distinctLanguages.map((lang) => (
+                        <option key={lang} value={lang}>
+                          Language: {lang}
+                        </option>
+                      ))}
+                    </select>
+                  </div>
+
+                  <div className="col-6 col-md-3">
+                    <select
+                      className="form-select form-select-sm cinema-input"
+                      value={pickerStatus}
+                      onChange={(e) => setPickerStatus(e.target.value)}
+                    >
+                      {distinctStatuses.map((st) => (
+                        <option key={st} value={st}>
+                          Status: {st}
+                        </option>
+                      ))}
+                    </select>
+                  </div>
+                </div>
+
+                {/* Catalog Cards Grid */}
+                {paginatedPickerMovies.length === 0 ? (
+                  <div className="text-center py-5">
+                    <i className="fa-solid fa-film text-secondary fs-1 mb-2"></i>
+                    <h6 className="text-white">No Movies Found</h6>
+                    <p className="text-secondary small">Try adjusting your search terms or filters</p>
+                  </div>
+                ) : (
+                  <div className="row row-cols-2 row-cols-sm-3 row-cols-md-4 row-cols-lg-6 g-3">
+                    {paginatedPickerMovies.map((m, idx) => {
+                      const title = m.title || m.movieName || "Untitled";
+                      const poster = getPosterUrl(m);
+                      const isSelected =
+                        pickerTarget === "movie"
+                          ? movieFormData.poster === m.poster ||
+                            (movieFormData.title && movieFormData.title.toLowerCase() === title.toLowerCase())
+                          : newShowForm.movie === m._id;
+                      const releaseYear = m.releaseYear || (m.releaseDate ? new Date(m.releaseDate).getFullYear() : "2024");
+
+                      return (
+                        <div key={m._id || m.tmdbId || idx} className="col">
+                          <div
+                            onClick={() => handleSelectMovieFromPicker(m)}
+                            className="glass-card h-100 p-2 d-flex flex-column cursor-pointer"
+                            style={{
+                              border: isSelected ? "2px solid #e50914" : "1px solid rgba(255,255,255,0.08)",
+                              transition: "all 0.15s ease",
+                              backgroundColor: isSelected ? "rgba(229, 9, 20, 0.1)" : "#181b2c",
+                            }}
+                          >
+                            <div
+                              className="w-100 rounded overflow-hidden position-relative"
+                              style={{ aspectRatio: "2/3", backgroundColor: "#111422" }}
+                            >
+                              <img
+                                src={poster}
+                                alt={title}
+                                loading="lazy"
+                                className="w-100 h-100"
+                                style={{ objectFit: "cover" }}
+                                onError={(e) => {
+                                  e.currentTarget.onerror = null;
+                                  e.currentTarget.src = createTitlePosterSvg(title);
+                                }}
+                              />
+                            </div>
+
+                            <div className="pt-2 flex-grow-1 d-flex flex-column justify-content-between">
+                              <div>
+                                <div className="d-flex justify-content-between align-items-center mb-1">
+                                  <span
+                                    className="badge bg-danger small"
+                                    style={{ fontSize: "0.58rem" }}
+                                  >
+                                    {m.theatricalStatus || "Now Showing"}
+                                  </span>
+                                  <span className="text-warning small" style={{ fontSize: "0.68rem" }}>
+                                    <i className="fa-solid fa-star me-1" style={{ fontSize: "0.58rem" }}></i>
+                                    {m.rating || "8.0"}
+                                  </span>
+                                </div>
+
+                                <h6
+                                  className="text-white fw-bold mb-0 text-truncate"
+                                  title={title}
+                                  style={{ fontSize: "0.8rem" }}
+                                >
+                                  {title}
+                                </h6>
+                                <div
+                                  className="text-secondary small"
+                                  style={{ fontSize: "0.68rem" }}
+                                >
+                                  {m.language || "Hindi"} &bull; {releaseYear}
+                                </div>
+                              </div>
+
+                              <button
+                                type="button"
+                                onClick={(e) => {
+                                  e.stopPropagation();
+                                  handleSelectMovieFromPicker(m);
+                                }}
+                                className={`btn btn-sm w-100 mt-2 py-1 ${
+                                  isSelected ? "btn-danger" : "btn-secondary-cinema"
+                                }`}
+                                style={{ fontSize: "0.72rem" }}
+                              >
+                                {isSelected ? "Selected" : "Select Movie"}
+                              </button>
+                            </div>
+                          </div>
+                        </div>
+                      );
+                    })}
+                  </div>
+                )}
+
+                {/* Modal Pagination */}
+                {totalPickerPages > 1 && (
+                  <div className="d-flex justify-content-center align-items-center gap-2 mt-3 pt-2 border-top border-secondary border-opacity-25">
+                    <button
+                      type="button"
+                      disabled={pickerPage === 1}
+                      onClick={() => setPickerPage((p) => Math.max(1, p - 1))}
+                      className="btn btn-sm btn-secondary-cinema"
+                    >
+                      &larr; Previous
+                    </button>
+                    <span className="text-secondary small px-2">
+                      Page {pickerPage} of {totalPickerPages}
+                    </span>
+                    <button
+                      type="button"
+                      disabled={pickerPage === totalPickerPages}
+                      onClick={() => setPickerPage((p) => Math.min(totalPickerPages, p + 1))}
+                      className="btn btn-sm btn-secondary-cinema"
+                    >
+                      Next &rarr;
+                    </button>
+                  </div>
+                )}
+              </div>
+
+              <div className="modal-footer border-secondary border-opacity-25 py-2">
+                <button
+                  type="button"
+                  className="btn btn-secondary-cinema btn-sm px-3"
+                  onClick={() => setMoviePickerModalOpen(false)}
+                >
+                  Close
+                </button>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }
