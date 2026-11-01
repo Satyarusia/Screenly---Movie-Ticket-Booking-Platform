@@ -12,14 +12,6 @@ import { getSavedPayoutAccounts, savePayoutAccount, deletePayoutAccount } from "
 import { getRecentlyViewed } from "../services/recentlyViewed";
 import toast from "react-hot-toast";
 
-const AVATAR_PRESETS = [
-  "https://images.unsplash.com/photo-1534528741775-53994a69daeb?w=150&auto=format&fit=crop&q=80",
-  "https://images.unsplash.com/photo-1507003211169-0a1dd7228f2d?w=150&auto=format&fit=crop&q=80",
-  "https://images.unsplash.com/photo-1517841905240-472988babdf9?w=150&auto=format&fit=crop&q=80",
-  "https://images.unsplash.com/photo-1500648767791-00dcc994a43e?w=150&auto=format&fit=crop&q=80",
-  "https://images.unsplash.com/photo-1494790108377-be9c29b29330?w=150&auto=format&fit=crop&q=80",
-];
-
 export default function Profile() {
   const { user, updateUser, logout } = useAuth();
   const navigate = useNavigate();
@@ -142,11 +134,6 @@ export default function Profile() {
   const [recentlyViewed, setRecentlyViewed] = useState([]);
   const [payoutAccounts, setPayoutAccounts] = useState([]);
 
-  // Profile Avatar State
-  const [selectedAvatar, setSelectedAvatar] = useState(
-    () => localStorage.getItem(`screenly_avatar_${user?.id || user?._id}`) || ""
-  );
-
   // Change Password State
   const [passwordForm, setPasswordForm] = useState({
     currentPassword: "",
@@ -154,19 +141,6 @@ export default function Profile() {
     confirmPassword: "",
   });
   const [passwordLoading, setPasswordLoading] = useState(false);
-
-  // Notification Preferences State
-  const [notifications, setNotifications] = useState(() => {
-    const saved = localStorage.getItem(`screenly_notify_${user?.id || user?._id}`);
-    return saved
-      ? JSON.parse(saved)
-      : {
-        emailTicket: true,
-        showtimeReminder: true,
-        advanceBookingAlert: true,
-        promotions: false,
-      };
-  });
 
   // Manage Payout Add Modal State
   const [showAddPayoutModal, setShowAddPayoutModal] = useState(false);
@@ -225,14 +199,6 @@ export default function Profile() {
     fetchProfileData();
   }, [user, fetchProfileData]);
 
-  const handleAvatarSelect = (url) => {
-    setSelectedAvatar(url);
-    if (user?.id || user?._id) {
-      localStorage.setItem(`screenly_avatar_${user.id || user._id}`, url);
-    }
-    toast.success("Profile picture updated!");
-  };
-
   const handlePasswordChange = async (e) => {
     e.preventDefault();
     if (!passwordForm.currentPassword || !passwordForm.newPassword) {
@@ -264,15 +230,6 @@ export default function Profile() {
     }
   };
 
-  const handleNotificationToggle = (key) => {
-    const updated = { ...notifications, [key]: !notifications[key] };
-    setNotifications(updated);
-    if (user?.id || user?._id) {
-      localStorage.setItem(`screenly_notify_${user.id || user._id}`, JSON.stringify(updated));
-    }
-    toast.success("Notification preferences updated!");
-  };
-
   const handleRemoveFavorite = async (movie) => {
     await toggleFavoriteMovie(movie);
     setFavorites(getFavorites());
@@ -285,16 +242,16 @@ export default function Profile() {
       <div className="glass-panel p-4 mb-4">
         <div className="d-flex flex-column flex-md-row justify-content-between align-items-md-center gap-3">
           <div className="d-flex align-items-center gap-3">
-            {selectedAvatar ? (
+            {user?.avatar ? (
               <img
-                src={selectedAvatar}
+                src={user.avatar}
                 alt={user?.name || "User"}
-                className="rounded-circle shadow object-fit-cover"
+                className="rounded-circle shadow object-fit-cover flex-shrink-0"
                 style={{ width: "68px", height: "68px", border: "2px solid #e50914" }}
               />
             ) : (
               <div
-                className="rounded-circle d-flex align-items-center justify-content-center text-white fw-bold shadow"
+                className="rounded-circle d-flex align-items-center justify-content-center text-white fw-bold shadow flex-shrink-0"
                 style={{
                   width: "68px",
                   height: "68px",
@@ -735,96 +692,6 @@ export default function Profile() {
                   <div className="p-2 rounded-2 text-secondary small" style={{ background: "rgba(255,255,255,0.02)", border: "1px solid rgba(255,255,255,0.06)" }}>
                     {user?.createdAt ? new Date(user.createdAt).toLocaleDateString(undefined, { year: 'numeric', month: 'short', day: 'numeric' }) : "Verified Member"}
                   </div>
-                </div>
-              </div>
-            </div>
-          </div>
-          {/* Profile Picture Selector */}
-          <div className="col-12 col-md-6">
-            <div className="glass-panel p-4 h-100">
-              <h5 className="text-white fw-bold mb-1">
-                <i className="fa-solid fa-image text-danger me-2"></i> Profile Avatar
-              </h5>
-              <p className="text-secondary small mb-3">Select your cinema patron avatar</p>
-
-              <div className="d-flex flex-wrap gap-3 mb-4">
-                {AVATAR_PRESETS.map((url, i) => (
-                  <img
-                    key={i}
-                    src={url}
-                    alt={`Avatar ${i}`}
-                    onClick={() => handleAvatarSelect(url)}
-                    className="rounded-circle cursor-pointer shadow"
-                    style={{
-                      width: "56px",
-                      height: "56px",
-                      objectFit: "cover",
-                      cursor: "pointer",
-                      border: selectedAvatar === url ? "3px solid #e50914" : "2px solid rgba(255,255,255,0.1)",
-                      transform: selectedAvatar === url ? "scale(1.1)" : "scale(1)",
-                      transition: "all 0.2s",
-                    }}
-                  />
-                ))}
-              </div>
-            </div>
-          </div>
-
-          {/* Notification Preferences */}
-          <div className="col-12 col-md-6">
-            <div className="glass-panel p-4 h-100">
-              <h5 className="text-white fw-bold mb-1">
-                <i className="fa-solid fa-bell text-warning me-2"></i> Notification Preferences
-              </h5>
-              <p className="text-secondary small mb-3">Configure how Screenly alerts you</p>
-
-              <div className="d-flex flex-column gap-3">
-                <div className="d-flex justify-content-between align-items-center">
-                  <div>
-                    <div className="text-white small fw-bold">E-Ticket Confirmation Emails</div>
-                    <div className="text-secondary" style={{ fontSize: "0.75rem" }}>
-                      Receive digital ticket and QR passes after every booking
-                    </div>
-                  </div>
-                  <input
-                    type="checkbox"
-                    className="form-check-input"
-                    checked={notifications.emailTicket}
-                    onChange={() => handleNotificationToggle("emailTicket")}
-                    style={{ cursor: "pointer" }}
-                  />
-                </div>
-
-                <div className="d-flex justify-content-between align-items-center">
-                  <div>
-                    <div className="text-white small fw-bold">Showtime Reminders</div>
-                    <div className="text-secondary" style={{ fontSize: "0.75rem" }}>
-                      Get reminded 2 hours prior to scheduled screening
-                    </div>
-                  </div>
-                  <input
-                    type="checkbox"
-                    className="form-check-input"
-                    checked={notifications.showtimeReminder}
-                    onChange={() => handleNotificationToggle("showtimeReminder")}
-                    style={{ cursor: "pointer" }}
-                  />
-                </div>
-
-                <div className="d-flex justify-content-between align-items-center">
-                  <div>
-                    <div className="text-white small fw-bold">Advance Booking Alerts</div>
-                    <div className="text-secondary" style={{ fontSize: "0.75rem" }}>
-                      Instant alert when tickets open for anticipated blockbusters
-                    </div>
-                  </div>
-                  <input
-                    type="checkbox"
-                    className="form-check-input"
-                    checked={notifications.advanceBookingAlert}
-                    onChange={() => handleNotificationToggle("advanceBookingAlert")}
-                    style={{ cursor: "pointer" }}
-                  />
                 </div>
               </div>
             </div>
