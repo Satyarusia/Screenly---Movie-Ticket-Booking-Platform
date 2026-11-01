@@ -8,7 +8,6 @@ const {
   getBookingById,
   cancelSeats,
   cancelBooking,
-  verifyBooking,
   saveSimulatorBooking,
   getAllBookings,
   deleteBooking,
@@ -32,9 +31,6 @@ router.post("/save-simulator", protect, saveSimulatorBooking);
 
 // 6. Fetch User Bookings
 router.get("/mine", protect, getMyBookings);
-
-// 7. Admin Verification
-router.put("/:id/verify", protect, adminOnly, verifyBooking);
 
 // 8. Base Routes
 router.route("/")

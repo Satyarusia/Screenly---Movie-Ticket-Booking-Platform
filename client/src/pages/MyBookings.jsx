@@ -1,7 +1,8 @@
 // client/src/pages/MyBookings.jsx
 import { useState, useEffect, useCallback, useMemo } from "react";
-import { Link, useNavigate } from "react-router-dom";
+import { Link, useNavigate, Navigate } from "react-router-dom";
 import api from "../services/api";
+import { useAuth } from "../hooks/useAuth";
 import EmptyState from "../components/EmptyState";
 import LoadingSpinner from "../components/LoadingSpinner";
 import {
@@ -148,6 +149,12 @@ const formatShowDateTime = (dateVal, timeVal) => {
 
 export default function MyBookings({ isEmbedded = false }) {
   const navigate = useNavigate();
+  const { isAdmin } = useAuth();
+
+  // Route Protection: Admin users cannot access User My Bookings
+  if (isAdmin && !isEmbedded) {
+    return <Navigate to="/admin" replace />;
+  }
 
   const [bookings, setBookings] = useState([]);
   const [moviesMap, setMoviesMap] = useState({});
@@ -471,7 +478,7 @@ export default function MyBookings({ isEmbedded = false }) {
               <span className="badge bg-danger">
                 <i className="fa-solid fa-ticket me-1"></i> Ticket Hub
               </span>
-              <span className="text-secondary small">Verified Customer Reservations</span>
+              <span className="text-secondary small">Active Customer Reservations</span>
             </div>
             <h2 className="text-white fw-bold mb-0">My Bookings</h2>
             <p className="text-secondary small mb-0">
@@ -578,7 +585,7 @@ export default function MyBookings({ isEmbedded = false }) {
 
       {/* Main Content Area */}
       {loading ? (
-        <LoadingSpinner message="Retrieving your verified ticket reservations..." />
+        <LoadingSpinner message="Retrieving your ticket reservations..." />
       ) : error ? (
         <div className="glass-panel p-5 text-center text-secondary my-4">
           <i className="fa-solid fa-triangle-exclamation text-danger fs-2 mb-3"></i>
@@ -937,7 +944,7 @@ export default function MyBookings({ isEmbedded = false }) {
                       >
                         {isPartiallyCancelled
                           ? "Partially Cancelled Pass"
-                          : "Verified Ticket Pass"}
+                          : "Cinema Ticket Pass"}
                       </span>
                       <span className="badge bg-secondary bg-opacity-75">{status}</span>
                     </div>

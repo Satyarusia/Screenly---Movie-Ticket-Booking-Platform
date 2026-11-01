@@ -34,18 +34,6 @@ export default function ManageBookings() {
     fetchBookings();
   }, [fetchBookings]);
 
-  const handleToggleVerify = async (bookingId) => {
-    try {
-      await api.put(`/api/bookings/${bookingId}/verify`);
-      fetchBookings();
-    } catch {
-      // Local fallback toggle
-      setBookings((prev) =>
-        prev.map((b) => (b._id === bookingId ? { ...b, isVerified: !b.isVerified } : b))
-      );
-    }
-  };
-
   const openAdminCancelModal = (b) => {
     setCancelTargetBooking(b);
     setSeatsToCancel([]);
@@ -209,7 +197,6 @@ export default function ManageBookings() {
                   <th>Screen & Showtime</th>
                   <th>Seats</th>
                   <th>Total Paid</th>
-                  <th>Verification</th>
                   <th>Status</th>
                   <th className="text-end">Actions</th>
                 </tr>
@@ -272,18 +259,6 @@ export default function ManageBookings() {
                             Refund: ₹{b.refundAmount}
                           </div>
                         )}
-                      </td>
-                      <td>
-                        <button
-                          onClick={() => handleToggleVerify(b._id)}
-                          className={`btn btn-sm ${
-                            b.isVerified ? "btn-success" : "btn-outline-secondary"
-                          } py-1 px-2`}
-                          style={{ fontSize: "0.75rem" }}
-                        >
-                          <i className={`fa-solid ${b.isVerified ? "fa-circle-check" : "fa-shield"} me-1`}></i>
-                          {b.isVerified ? "Verified" : "Verify Pass"}
-                        </button>
                       </td>
                       <td>
                         {b.status === "cancelled" ? (

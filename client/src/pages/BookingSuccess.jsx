@@ -170,7 +170,7 @@ export default function BookingSuccess() {
               SCREENLY DIGITAL PASS
             </h3>
             <span className="small text-white text-opacity-90">
-              Official Cinema E-Ticket &bull; Verified Entry
+              Official Cinema E-Ticket &bull; Confirmed Entry
             </span>
           </div>
           <div className="text-end font-monospace small">
@@ -265,7 +265,7 @@ export default function BookingSuccess() {
 
           <hr className="border-secondary opacity-25 my-4" />
 
-          {/* Pricing, Payment Status & Verified QR Code */}
+          {/* Pricing, Payment Status & Ticket QR Code */}
           <div className="row g-3 align-items-center">
             <div className="col-12 col-sm-8">
               <div className="row g-2">
@@ -333,8 +333,8 @@ export default function BookingSuccess() {
           className="p-3 text-center border-top border-secondary border-opacity-25"
           style={{ background: "rgba(255, 255, 255, 0.02)", fontSize: "0.75rem", color: "#94a3b8" }}
         >
-          <i className="fa-solid fa-shield-halved text-success me-1"></i>
-          Screenly Verified Admission Pass &bull; Present at box office or cinema usher kiosk
+          <i className="fa-solid fa-ticket text-danger me-1"></i>
+          Screenly Admission Pass &bull; Present at box office or cinema usher kiosk
         </div>
       </div>
     </div>

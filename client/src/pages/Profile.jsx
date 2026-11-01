@@ -4,6 +4,7 @@ import { Link, useNavigate, useLocation } from "react-router-dom";
 import api from "../services/api";
 import { useAuth } from "../hooks/useAuth";
 import EmptyState from "../components/EmptyState";
+import ConfirmModal from "../components/ConfirmModal";
 import MyBookings from "./MyBookings";
 import { getMovieTitle, getPosterUrl, getMovieRating, handleImageError } from "../utils/tmdbHelper";
 import { getFavorites, toggleFavoriteMovie } from "../utils/favoritesHelper";
@@ -20,9 +21,13 @@ const AVATAR_PRESETS = [
 ];
 
 export default function Profile() {
-  const { user, updateUser } = useAuth();
+  const { user, updateUser, logout } = useAuth();
   const navigate = useNavigate();
   const location = useLocation();
+
+  // Logout Confirmation Modal State
+  const [isLogoutModalOpen, setIsLogoutModalOpen] = useState(false);
+  const [logoutLoading, setLogoutLoading] = useState(false);
 
   // Edit Name State
   const [isEditingName, setIsEditingName] = useState(false);
@@ -108,7 +113,11 @@ export default function Profile() {
   const [activeTab, setActiveTab] = useState(() => {
     const params = new URLSearchParams(window.location.search);
     const tabParam = params.get("tab");
-    if (tabParam) return tabParam;
+    if (tabParam) {
+      if (user?.role === "admin" && tabParam === "bookings") return "settings";
+      return tabParam;
+    }
+    if (user?.role === "admin") return "settings";
     if (window.location.pathname.includes("order") || window.location.pathname.includes("booking")) return "bookings";
     if (window.location.pathname.includes("setting")) return "settings";
     return "bookings";
@@ -118,11 +127,15 @@ export default function Profile() {
     const params = new URLSearchParams(location.search);
     const tabParam = params.get("tab");
     if (tabParam) {
-      setActiveTab(tabParam);
+      if (user?.role === "admin" && tabParam === "bookings") {
+        setActiveTab("settings");
+      } else {
+        setActiveTab(tabParam);
+      }
     } else if (location.pathname.includes("order") || location.pathname.includes("booking")) {
-      setActiveTab("bookings");
+      setActiveTab(user?.role === "admin" ? "settings" : "bookings");
     }
-  }, [location]);
+  }, [location, user?.role]);
 
   const [bookings, setBookings] = useState([]);
   const [favorites, setFavorites] = useState([]);
@@ -344,7 +357,7 @@ export default function Profile() {
                 <div className="d-flex align-items-center gap-2 flex-wrap">
                   <h3 className="text-white fw-bold mb-0">{user?.name || "Cinema Enthusiast"}</h3>
                   <span className="badge bg-danger small">
-                    {user?.role === "admin" ? "Administrator" : "Verified Member"}
+                    {user?.role === "admin" ? "Administrator" : "Member"}
                   </span>
                   <button
                     type="button"
@@ -355,6 +368,15 @@ export default function Profile() {
                   >
                     <i className="fa-solid fa-pen-to-square me-1"></i> Edit Name
                   </button>
+                  <button
+                    type="button"
+                    onClick={() => setIsLogoutModalOpen(true)}
+                    className="btn btn-sm btn-secondary-cinema text-danger py-1 px-2"
+                    title="Logout"
+                    style={{ fontSize: "0.8rem" }}
+                  >
+                    <i className="fa-solid fa-arrow-right-from-bracket me-1"></i> Logout
+                  </button>
                 </div>
                 <p className="text-secondary small mb-0">{user?.email || "customer@screenly.com"}</p>
               </div>
@@ -362,16 +384,25 @@ export default function Profile() {
           </div>
 
           <div className="d-flex gap-3 text-center">
-            <div className="p-3 rounded-3" style={{ background: "rgba(255,255,255,0.03)", minWidth: "115px" }}>
-              <span className="text-secondary small d-block">Active Tickets</span>
-              <span className="text-white fw-bold fs-4">
-                {bookings.reduce(
-                  (acc, b) =>
-                    acc + (b.tickets?.filter((t) => t.status === "confirmed").length || 0),
-                  0
-                )}
-              </span>
-            </div>
+            {user?.role !== "admin" ? (
+              <div className="p-3 rounded-3" style={{ background: "rgba(255,255,255,0.03)", minWidth: "115px" }}>
+                <span className="text-secondary small d-block">Active Tickets</span>
+                <span className="text-white fw-bold fs-4">
+                  {bookings.reduce(
+                    (acc, b) =>
+                      acc + (b.tickets?.filter((t) => t.status === "confirmed").length || 0),
+                    0
+                  )}
+                </span>
+              </div>
+            ) : (
+              <div className="p-3 rounded-3" style={{ background: "rgba(255,255,255,0.03)", minWidth: "115px" }}>
+                <span className="text-secondary small d-block">Admin Role</span>
+                <span className="badge bg-danger bg-opacity-25 text-danger border border-danger border-opacity-50 mt-2 px-2 py-1">
+                  Super Admin
+                </span>
+              </div>
+            )}
             <div className="p-3 rounded-3" style={{ background: "rgba(255,255,255,0.03)", minWidth: "115px" }}>
               <span className="text-secondary small d-block">Favorites</span>
               <span className="text-warning fw-bold fs-4">{favorites.length}</span>
@@ -386,49 +417,67 @@ export default function Profile() {
 
       {/* Tabs Bar */}
       <div className="d-flex gap-2 mb-4 flex-wrap">
-        <button
-          onClick={() => setActiveTab("bookings")}
-          className={`btn py-2 px-3 rounded-3 fw-bold ${activeTab === "bookings" ? "btn-cinema" : "btn-secondary-cinema"
+        {user?.role !== "admin" && (
+          <button
+            onClick={() => setActiveTab("bookings")}
+            className={`btn py-2 px-3 rounded-3 fw-bold ${
+              activeTab === "bookings" ? "btn-cinema" : "btn-secondary-cinema"
             }`}
-        >
-          <i className="fa-solid fa-ticket me-2"></i> My Bookings ({bookings.length})
-        </button>
+          >
+            <i className="fa-solid fa-ticket me-2"></i> My Bookings ({bookings.length})
+          </button>
+        )}
+
+        {user?.role === "admin" && (
+          <Link
+            to="/admin"
+            className="btn py-2 px-3 rounded-3 fw-bold btn-danger d-flex align-items-center gap-2 text-decoration-none"
+          >
+            <i className="fa-solid fa-shield-halved"></i> Admin Control Panel
+          </Link>
+        )}
 
         <button
           onClick={() => setActiveTab("favorites")}
-          className={`btn py-2 px-3 rounded-3 fw-bold ${activeTab === "favorites" ? "btn-cinema" : "btn-secondary-cinema"
-            }`}
+          className={`btn py-2 px-3 rounded-3 fw-bold ${
+            activeTab === "favorites" ? "btn-cinema" : "btn-secondary-cinema"
+          }`}
         >
           <i className="fa-solid fa-heart me-2 text-danger"></i> Favorites ({favorites.length})
         </button>
 
         <button
           onClick={() => setActiveTab("recentlyViewed")}
-          className={`btn py-2 px-3 rounded-3 fw-bold ${activeTab === "recentlyViewed" ? "btn-cinema" : "btn-secondary-cinema"
-            }`}
+          className={`btn py-2 px-3 rounded-3 fw-bold ${
+            activeTab === "recentlyViewed" ? "btn-cinema" : "btn-secondary-cinema"
+          }`}
         >
           <i className="fa-solid fa-clock-rotate-left me-2 text-info"></i> Recently Viewed ({recentlyViewed.length})
         </button>
 
         <button
           onClick={() => setActiveTab("settings")}
-          className={`btn py-2 px-3 rounded-3 fw-bold ${activeTab === "settings" ? "btn-cinema" : "btn-secondary-cinema"
-            }`}
+          className={`btn py-2 px-3 rounded-3 fw-bold ${
+            activeTab === "settings" ? "btn-cinema" : "btn-secondary-cinema"
+          }`}
         >
           <i className="fa-solid fa-gear me-2 text-warning"></i> Account Settings
         </button>
 
-        <button
-          onClick={() => setActiveTab("payouts")}
-          className={`btn py-2 px-3 rounded-3 fw-bold ${activeTab === "payouts" ? "btn-cinema" : "btn-secondary-cinema"
+        {user?.role !== "admin" && (
+          <button
+            onClick={() => setActiveTab("payouts")}
+            className={`btn py-2 px-3 rounded-3 fw-bold ${
+              activeTab === "payouts" ? "btn-cinema" : "btn-secondary-cinema"
             }`}
-        >
-          <i className="fa-solid fa-money-bill-transfer me-2 text-success"></i> Refund Accounts ({payoutAccounts.length})
-        </button>
+          >
+            <i className="fa-solid fa-money-bill-transfer me-2 text-success"></i> Refund Accounts ({payoutAccounts.length})
+          </button>
+        )}
       </div>
 
-      {/* ================= TAB 1: MY BOOKINGS ================= */}
-      {activeTab === "bookings" && <MyBookings isEmbedded={true} />}
+      {/* ================= TAB 1: MY BOOKINGS (USER ONLY) ================= */}
+      {activeTab === "bookings" && user?.role !== "admin" && <MyBookings isEmbedded={true} />}
 
       {/* ================= TAB 2: FAVORITES ================= */}
       {activeTab === "favorites" && (
@@ -996,6 +1045,29 @@ export default function Profile() {
           </div>
         </div>
       )}
+      {/* Logout Confirmation Modal */}
+      <ConfirmModal
+        isOpen={isLogoutModalOpen}
+        title="Logout"
+        message="Are you sure you want to log out?"
+        confirmLabel="Logout"
+        confirmVariant="danger"
+        loading={logoutLoading}
+        onConfirm={async () => {
+          try {
+            setLogoutLoading(true);
+            await logout();
+            toast.success("Logged out successfully.");
+            navigate("/landing");
+          } catch {
+            navigate("/landing");
+          } finally {
+            setLogoutLoading(false);
+            setIsLogoutModalOpen(false);
+          }
+        }}
+        onCancel={() => setIsLogoutModalOpen(false)}
+      />
     </div>
   );
 }

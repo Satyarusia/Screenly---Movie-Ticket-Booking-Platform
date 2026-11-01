@@ -521,24 +521,6 @@ const cancelBooking = async (req, res) => {
   }
 };
 
-// @desc    Admin Verify Booking
-// @route   PUT /api/bookings/:id/verify
-// @access  Private/Admin
-const verifyBooking = async (req, res) => {
-  try {
-    const booking = await Booking.findById(req.params.id);
-    if (!booking) return res.status(404).json({ message: "Booking not found" });
-
-    booking.isVerified = !booking.isVerified;
-    booking.verifiedAt = booking.isVerified ? new Date() : null;
-    await booking.save();
-
-    res.json({ message: `Booking ${booking.isVerified ? "Verified" : "Unverified"}`, booking });
-  } catch (error) {
-    res.status(500).json({ message: error.message });
-  }
-};
-
 // @desc    Save simulation booking fallback
 // @route   POST /api/bookings/save-simulator
 // @access  Public
@@ -597,7 +579,6 @@ module.exports = {
   getBookingById,
   cancelSeats,
   cancelBooking,
-  verifyBooking,
   saveSimulatorBooking,
   getAllBookings,
   deleteBooking,

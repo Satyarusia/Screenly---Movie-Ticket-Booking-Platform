@@ -331,16 +331,18 @@ export default function Navbar() {
             Theatres
           </Link>
 
-          {/* 7. My Bookings */}
-          <Link
-            to={user ? "/bookings" : "/login"}
-            className={`btn btn-sm py-1 px-2 fw-bold text-decoration-none ${
-              location.pathname === "/bookings" || isNavActive("/profile", "tab", "bookings") ? "text-danger" : "text-light"
-            }`}
-            style={{ fontSize: "0.85rem" }}
-          >
-            My Bookings
-          </Link>
+          {/* 7. My Bookings (Normal Users Only - Hidden for Admins) */}
+          {!isAdmin && (
+            <Link
+              to={user ? "/bookings" : "/login"}
+              className={`btn btn-sm py-1 px-2 fw-bold text-decoration-none ${
+                location.pathname === "/bookings" || isNavActive("/profile", "tab", "bookings") ? "text-danger" : "text-light"
+              }`}
+              style={{ fontSize: "0.85rem" }}
+            >
+              My Bookings
+            </Link>
+          )}
 
           {/* 8. Wishlist */}
           <Link

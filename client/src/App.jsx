@@ -147,6 +147,14 @@ export default function App() {
                     }
                   />
                   <Route
+                    path="/my-bookings"
+                    element={
+                      <ProtectedRoute>
+                        <MyBookings />
+                      </ProtectedRoute>
+                    }
+                  />
+                  <Route
                     path="/user-orders"
                     element={
                       <ProtectedRoute>
