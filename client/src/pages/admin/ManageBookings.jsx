@@ -59,29 +59,41 @@ export default function ManageBookings() {
 
     setIsCancelling(true);
     const booking = cancelTargetBooking;
-    const remainingSeats = (booking.seats || []).filter((s) => !seatsToCancel.includes(s));
-    const refundAmount = Math.round((booking.totalAmount / (booking.seats?.length || 1)) * seatsToCancel.length);
+    const count =
+      (booking.seats?.length || 0) + (booking.cancelledSeats?.length || 0) || 1;
+    const basePerSeat = Math.round(
+      (booking.originalTotalAmount || booking.totalAmount) / count
+    );
+    const refundAmount = Math.round(basePerSeat * seatsToCancel.length);
 
     try {
       await api.put(`/api/bookings/${booking._id}/cancel-seats`, {
         seatsToCancel,
         refundAmount,
         payoutDestination: "Admin Box Office Refund",
+        reason: "Admin cancelled seat(s)",
       });
+      toast.success(`Cancelled ${seatsToCancel.length} seat(s) successfully.`);
     } catch {
-      // Update locally
+      // Local fallback
+      const remainingSeats = (booking.seats || []).filter(
+        (s) => !seatsToCancel.includes(s)
+      );
       const updated = bookings.map((b) =>
         b._id === booking._id
           ? {
               ...b,
-              cancelledSeats: [...(b.cancelledSeats || []), ...seatsToCancel],
-              status: remainingSeats.length === 0 ? "cancelled" : "confirmed",
+              seats: remainingSeats,
+              cancelledSeats: [...new Set([...(b.cancelledSeats || []), ...seatsToCancel])],
+              status: remainingSeats.length === 0 ? "cancelled" : "partially_cancelled",
+              totalAmount: Math.max(0, (b.totalAmount || 0) - basePerSeat * seatsToCancel.length),
               refundAmount: (b.refundAmount || 0) + refundAmount,
             }
           : b
       );
       setBookings(updated);
       localStorage.setItem("screenly_user_bookings", JSON.stringify(updated));
+      toast.success("Cancellation confirmed.");
     }
 
     setIsCancelling(false);
@@ -107,6 +119,11 @@ export default function ManageBookings() {
     let matchesStatus = true;
     if (statusFilter === "confirmed") {
       matchesStatus = b.status === "confirmed" && !isPastShow;
+    } else if (statusFilter === "partially_cancelled") {
+      matchesStatus =
+        b.status === "partially_cancelled" ||
+        b.status === "Partially Cancelled" ||
+        (b.cancelledSeats?.length > 0 && (b.seats?.length || 0) > 0);
     } else if (statusFilter === "past") {
       matchesStatus = isPastShow;
     } else if (statusFilter !== "All") {
@@ -155,6 +172,7 @@ export default function ManageBookings() {
             >
               <option value="All">All Statuses</option>
               <option value="confirmed">Active / Upcoming Shows</option>
+              <option value="partially_cancelled">Partially Cancelled</option>
               <option value="past">Completed / Past Shows</option>
               <option value="pending">Pending Hold</option>
               <option value="cancelled">Cancelled</option>
@@ -205,6 +223,10 @@ export default function ManageBookings() {
                     (showTimeDate && showTimeDate < new Date()) ||
                     (b.showDate && b.showDate !== "Today" && b.showDate !== "Tomorrow" && new Date(b.showDate) < new Date());
                   const isConfirmed = b.status === "confirmed";
+                  const isPartiallyCancelled =
+                    b.status === "partially_cancelled" ||
+                    b.status === "Partially Cancelled" ||
+                    (b.cancelledSeats?.length > 0 && (b.seats?.length || 0) > 0);
 
                   return (
                     <tr key={b._id}>
@@ -225,10 +247,32 @@ export default function ManageBookings() {
                       </td>
                       <td>
                         <span className="badge bg-secondary text-white small">
-                          {b.seats?.join(", ")}
+                          {b.seats?.length > 0 ? b.seats.join(", ") : "No active seats"}
                         </span>
+                        {b.cancelledSeats && b.cancelledSeats.length > 0 && (
+                          <div className="mt-1">
+                            <span
+                              className="badge bg-danger bg-opacity-25 text-danger border border-danger border-opacity-50"
+                              style={{ fontSize: "0.68rem" }}
+                            >
+                              Cancelled: {b.cancelledSeats.join(", ")}
+                            </span>
+                          </div>
+                        )}
                       </td>
-                      <td className="text-success fw-bold">₹{b.totalAmount}</td>
+                      <td className="text-success fw-bold">
+                        ₹{b.totalAmount ?? 0}
+                        {b.originalTotalAmount && b.originalTotalAmount !== b.totalAmount && (
+                          <div className="text-secondary small text-decoration-line-through">
+                            Orig: ₹{b.originalTotalAmount}
+                          </div>
+                        )}
+                        {b.refundAmount > 0 && (
+                          <div className="text-info small" style={{ fontSize: "0.72rem" }}>
+                            Refund: ₹{b.refundAmount}
+                          </div>
+                        )}
+                      </td>
                       <td>
                         <button
                           onClick={() => handleToggleVerify(b._id)}
@@ -244,6 +288,10 @@ export default function ManageBookings() {
                       <td>
                         {b.status === "cancelled" ? (
                           <span className="badge bg-danger small">CANCELLED</span>
+                        ) : isPartiallyCancelled ? (
+                          <span className="badge bg-warning text-dark small fw-bold">
+                            PARTIALLY CANCELLED
+                          </span>
                         ) : isPastShow ? (
                           <span className="badge bg-secondary small">
                             <i className="fa-solid fa-flag-checkered me-1"></i> PAST SHOW
@@ -256,7 +304,7 @@ export default function ManageBookings() {
                       </td>
                       <td className="text-end">
                         <div className="d-flex justify-content-end gap-1">
-                          {isConfirmed && !isPastShow && (
+                          {(isConfirmed || isPartiallyCancelled) && !isPastShow && (b.seats?.length || 0) > 0 && (
                             <button
                               onClick={() => openAdminCancelModal(b)}
                               className="btn btn-sm btn-outline-danger py-1 px-2"

@@ -346,7 +346,7 @@ const getShowSeats = async (req, res) => {
 
     const confirmedBookings = await Booking.find({
       show: show._id,
-      status: { $in: ["confirmed", "completed"] },
+      status: { $in: ["confirmed", "completed", "partially_cancelled", "Partially Cancelled"] },
     }).select("seats");
 
     const confirmedSeatsSet = new Set();
@@ -413,7 +413,7 @@ const updateShow = async (req, res) => {
 
     const activeBookingsCount = await Booking.countDocuments({
       show: existingShow._id,
-      status: { $in: ["confirmed", "pending"] },
+      status: { $in: ["confirmed", "pending", "partially_cancelled", "Partially Cancelled"] },
     });
 
     const {
@@ -499,7 +499,7 @@ const deleteShow = async (req, res) => {
 
     const activeBookingsCount = await Booking.countDocuments({
       show: show._id,
-      status: { $in: ["confirmed", "pending"] },
+      status: { $in: ["confirmed", "pending", "partially_cancelled", "Partially Cancelled"] },
     });
 
     const isForce = req.query.force === "true" || req.body?.force === true;
@@ -515,7 +515,7 @@ const deleteShow = async (req, res) => {
     // If forced deletion, cancel active bookings and release holds
     if (activeBookingsCount > 0 && isForce) {
       await Booking.updateMany(
-        { show: show._id, status: { $in: ["confirmed", "pending"] } },
+        { show: show._id, status: { $in: ["confirmed", "pending", "partially_cancelled", "Partially Cancelled"] } },
         { $set: { status: "cancelled", paymentStatus: "Refunded" } }
       );
     }

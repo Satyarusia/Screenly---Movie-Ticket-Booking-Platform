@@ -28,11 +28,27 @@ const bookingSchema = new mongoose.Schema(
     originalTotalAmount: { type: Number },
     tickets: [ticketItemSchema],
     cancelledSeats: [{ type: String }],
+    cancellationHistory: [
+      {
+        cancelledSeats: [String],
+        refundAmount: Number,
+        cancelledAt: { type: Date, default: Date.now },
+        reason: String,
+      },
+    ],
     refundAmount: { type: Number, default: 0 },
     refundDestination: { type: String },
     status: {
       type: String,
-      enum: ["pending", "confirmed", "cancelled", "expired", "completed"],
+      enum: [
+        "pending",
+        "confirmed",
+        "partially_cancelled",
+        "Partially Cancelled",
+        "cancelled",
+        "expired",
+        "completed",
+      ],
       default: "pending",
     },
     paymentStatus: {

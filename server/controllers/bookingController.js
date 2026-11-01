@@ -91,6 +91,10 @@ const enrichBookingsWithLifecycle = (bookings) => {
       if (obj.status === "cancelled") {
         obj.computedStatus = "Cancelled";
         obj.displayStatus = "Cancelled";
+      } else if (obj.status === "partially_cancelled" || obj.status === "Partially Cancelled") {
+        obj.computedStatus = "Partially Cancelled";
+        obj.displayStatus = "Partially Cancelled";
+        obj.isPartiallyCancelled = true;
       } else if (obj.status === "expired") {
         obj.computedStatus = "Expired";
         obj.displayStatus = "Expired";
@@ -110,8 +114,17 @@ const enrichBookingsWithLifecycle = (bookings) => {
     } else {
       obj.isPastShow = false;
       obj.showLifecycle = "Upcoming";
-      obj.computedStatus = obj.status === "cancelled" ? "Cancelled" : "Upcoming";
-      obj.displayStatus = obj.computedStatus;
+      if (obj.status === "cancelled") {
+        obj.computedStatus = "Cancelled";
+        obj.displayStatus = "Cancelled";
+      } else if (obj.status === "partially_cancelled" || obj.status === "Partially Cancelled") {
+        obj.computedStatus = "Partially Cancelled";
+        obj.displayStatus = "Partially Cancelled";
+        obj.isPartiallyCancelled = true;
+      } else {
+        obj.computedStatus = "Upcoming";
+        obj.displayStatus = "Upcoming";
+      }
     }
     return obj;
   });
@@ -352,48 +365,96 @@ const getBookingById = async (req, res) => {
 // @access  Private
 const cancelSeats = async (req, res) => {
   try {
-    const { seatsToCancel = [], refundAmount = 0, payoutDestination } = req.body;
+    const { seatsToCancel = [], refundAmount = 0, payoutDestination, reason } = req.body;
     const booking = await Booking.findById(req.params.id);
     if (!booking) return res.status(404).json({ message: "Booking not found" });
 
-    // Update tickets array
-    if (booking.tickets && Array.isArray(booking.tickets)) {
-      booking.tickets = booking.tickets.map((t) => {
-        if (seatsToCancel.includes(t.seatNumber)) {
-          return { ...t.toObject(), status: "cancelled", cancelledAt: new Date() };
-        }
-        return t;
-      });
+    if (!Array.isArray(seatsToCancel) || seatsToCancel.length === 0) {
+      return res.status(400).json({ message: "Please specify at least one seat to cancel" });
     }
 
-    booking.cancelledSeats = [
-      ...new Set([...(booking.cancelledSeats || []), ...seatsToCancel]),
-    ];
+    // Only cancel seats that are currently active in booking.seats
+    const validSeatsToCancel = seatsToCancel.filter((s) => (booking.seats || []).includes(s));
+    if (validSeatsToCancel.length === 0) {
+      return res.status(400).json({ message: "None of the specified seats are currently active in this booking" });
+    }
 
+    // Store original total amount before any deduction
     if (!booking.originalTotalAmount) {
       booking.originalTotalAmount = booking.totalAmount;
     }
 
-    booking.refundAmount = (booking.refundAmount || 0) + (Number(refundAmount) || 0);
+    // Calculate per-seat base price accurately
+    const currentActiveCount = booking.seats.length;
+    const originalCount = currentActiveCount + (booking.cancelledSeats?.length || 0);
+    const basePerSeat = Math.round(booking.originalTotalAmount / (originalCount || 1));
+    const cancelledBaseTotal = basePerSeat * validSeatsToCancel.length;
+
+    // Remaining seats
+    const remainingSeats = booking.seats.filter((s) => !validSeatsToCancel.includes(s));
+    booking.seats = remainingSeats;
+
+    // Update tickets array
+    if (booking.tickets && Array.isArray(booking.tickets)) {
+      booking.tickets = booking.tickets.map((t) => {
+        const tObj = t.toObject ? t.toObject() : t;
+        if (validSeatsToCancel.includes(tObj.seatNumber)) {
+          return { ...tObj, status: "cancelled", cancelledAt: new Date() };
+        }
+        return tObj;
+      });
+    }
+
+    // Append to cancelledSeats without duplicates
+    booking.cancelledSeats = [
+      ...new Set([...(booking.cancelledSeats || []), ...validSeatsToCancel]),
+    ];
+
+    // Compute refund amount: if provided in req.body, use that; otherwise calculate 90% (10% fee)
+    const effectiveRefund =
+      Number(refundAmount) > 0 ? Number(refundAmount) : Math.round(cancelledBaseTotal * 0.9);
+    booking.refundAmount = (booking.refundAmount || 0) + effectiveRefund;
     if (payoutDestination) {
       booking.refundDestination = payoutDestination;
     }
 
-    const remainingSeats = (booking.seats || []).filter((s) => !seatsToCancel.includes(s));
+    // Update total amount & booking status
     if (remainingSeats.length === 0) {
+      booking.totalAmount = 0;
       booking.status = "cancelled";
       booking.paymentStatus = "Refunded";
     } else {
+      booking.totalAmount = Math.max(0, booking.totalAmount - cancelledBaseTotal);
+      booking.status = "partially_cancelled";
       booking.paymentStatus = "Partially Refunded";
     }
 
-    // Release seats from show
-    if (booking.show && seatsToCancel.length > 0) {
-      await releaseSeats(booking.show, seatsToCancel);
+    // Record in cancellation history
+    if (!booking.cancellationHistory) {
+      booking.cancellationHistory = [];
+    }
+    booking.cancellationHistory.push({
+      cancelledSeats: validSeatsToCancel,
+      refundAmount: effectiveRefund,
+      cancelledAt: new Date(),
+      reason: reason || "User requested partial seat cancellation",
+    });
+
+    // Release cancelled seats from show atomically so other users can immediately book them
+    if (booking.show && validSeatsToCancel.length > 0) {
+      await releaseSeats(booking.show, validSeatsToCancel);
     }
 
     await booking.save();
-    res.json({ message: "Selected seats cancelled successfully", booking });
+
+    // Re-populate booking with full show details
+    const populated = await Booking.findById(booking._id).populate(showDetails);
+    const [enriched] = enrichBookingsWithLifecycle([populated]);
+
+    res.json({
+      message: `${validSeatsToCancel.length} seat(s) cancelled successfully`,
+      booking: enriched,
+    });
   } catch (error) {
     res.status(500).json({ message: error.message || "Failed to cancel seats" });
   }
@@ -407,26 +468,56 @@ const cancelBooking = async (req, res) => {
     const booking = await Booking.findById(req.params.id).populate("show");
     if (!booking) return res.status(404).json({ message: "Booking not found" });
 
-    if (!["pending", "confirmed"].includes(booking.status)) {
+    if (!["pending", "confirmed", "partially_cancelled", "Partially Cancelled"].includes(booking.status)) {
       return res.status(400).json({ message: `A ${booking.status} booking cannot be cancelled` });
     }
 
+    const remainingSeats = booking.seats || [];
+
+    if (!booking.originalTotalAmount) {
+      booking.originalTotalAmount = booking.totalAmount;
+    }
+
+    const currentRefund = Math.round(booking.totalAmount * 0.9);
+    booking.refundAmount = (booking.refundAmount || 0) + currentRefund;
+
+    if (remainingSeats.length > 0) {
+      booking.cancelledSeats = [
+        ...new Set([...(booking.cancelledSeats || []), ...remainingSeats]),
+      ];
+      if (!booking.cancellationHistory) booking.cancellationHistory = [];
+      booking.cancellationHistory.push({
+        cancelledSeats: remainingSeats,
+        refundAmount: currentRefund,
+        cancelledAt: new Date(),
+        reason: "User cancelled remaining booking",
+      });
+    }
+
     booking.status = "cancelled";
-    booking.paymentStatus = booking.status === "confirmed" ? "Refunded" : "Cancelled";
+    booking.paymentStatus = "Refunded";
+    booking.totalAmount = 0;
+    booking.seats = [];
 
     if (booking.tickets && Array.isArray(booking.tickets)) {
-      booking.tickets = booking.tickets.map((t) => ({ ...t.toObject(), status: "cancelled" }));
+      booking.tickets = booking.tickets.map((t) => {
+        const tObj = t.toObject ? t.toObject() : t;
+        return { ...tObj, status: "cancelled", cancelledAt: new Date() };
+      });
     }
 
     await booking.save();
 
-    if (booking.show) {
-      await releaseSeats(booking.show._id || booking.show, booking.seats);
+    if (booking.show && remainingSeats.length > 0) {
+      await releaseSeats(booking.show._id || booking.show, remainingSeats);
     }
 
-    res.json({ message: "Booking cancelled successfully and seats released", booking });
+    const populated = await Booking.findById(booking._id).populate(showDetails);
+    const [enriched] = enrichBookingsWithLifecycle([populated]);
+
+    res.json({ message: "Booking cancelled successfully and seats released", booking: enriched });
   } catch (error) {
-    res.status(400).json({ message: "Invalid booking ID" });
+    res.status(400).json({ message: error.message || "Invalid booking ID" });
   }
 };
 
@@ -487,7 +578,7 @@ const deleteBooking = async (req, res) => {
     const booking = await Booking.findById(req.params.id);
     if (!booking) return res.status(404).json({ message: "Booking not found" });
 
-    if (["pending", "confirmed"].includes(booking.status)) {
+    if (["pending", "confirmed", "partially_cancelled", "Partially Cancelled"].includes(booking.status)) {
       await releaseSeats(booking.show, booking.seats);
     }
 

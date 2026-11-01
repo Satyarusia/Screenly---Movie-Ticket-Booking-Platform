@@ -41,6 +41,17 @@ const calculateBookingStatus = (booking) => {
     return "Cancelled";
   }
   if (
+    rawStatus === "partially_cancelled" ||
+    rawStatus === "partially cancelled" ||
+    booking.isPartiallyCancelled ||
+    (booking.cancelledSeats &&
+      booking.cancelledSeats.length > 0 &&
+      booking.seats &&
+      booking.seats.length > 0)
+  ) {
+    return "Partially Cancelled";
+  }
+  if (
     rawStatus === "expired" ||
     paymentStatus === "expired" ||
     paymentStatus === "failed"
@@ -283,10 +294,12 @@ export default function MyBookings({ isEmbedded = false }) {
     const counts = { all: bookings.length, upcoming: 0, today: 0, completed: 0, cancelled: 0 };
     bookings.forEach((b) => {
       const s = b.calculatedStatus || calculateBookingStatus(b);
-      if (s === "Upcoming") counts.upcoming++;
-      else if (s === "Today") counts.today++;
-      else if (s === "Completed") counts.completed++;
-      else if (s === "Cancelled") counts.cancelled++;
+      const isPast = s === "Completed";
+      const hasActiveSeats = (b.seats || []).length > 0;
+      if (s === "Upcoming" || (s === "Partially Cancelled" && !isPast && hasActiveSeats)) counts.upcoming++;
+      if (s === "Today") counts.today++;
+      if (isPast) counts.completed++;
+      if (s === "Cancelled" || (b.cancelledSeats && b.cancelledSeats.length > 0)) counts.cancelled++;
     });
     return counts;
   }, [bookings]);
@@ -298,10 +311,18 @@ export default function MyBookings({ isEmbedded = false }) {
         const status = b.calculatedStatus || calculateBookingStatus(b);
 
         // Tab filter
-        if (activeTab === "upcoming" && status !== "Upcoming") return false;
+        if (activeTab === "upcoming") {
+          const isPast = status === "Completed";
+          const hasActiveSeats = (b.seats || []).length > 0;
+          if (status !== "Upcoming" && !(status === "Partially Cancelled" && !isPast && hasActiveSeats)) {
+            return false;
+          }
+        }
         if (activeTab === "today" && status !== "Today") return false;
         if (activeTab === "completed" && status !== "Completed") return false;
-        if (activeTab === "cancelled" && status !== "Cancelled") return false;
+        if (activeTab === "cancelled" && status !== "Cancelled" && !(b.cancelledSeats && b.cancelledSeats.length > 0)) {
+          return false;
+        }
 
         // Search query
         if (searchTerm.trim()) {
@@ -343,11 +364,9 @@ export default function MyBookings({ isEmbedded = false }) {
 
   // Handle Cancellation
   const openCancelModal = (booking) => {
-    const activeSeats = (booking.tickets || [])
-      .filter((t) => t.status === "confirmed")
-      .map((t) => t.seatNumber);
+    const activeSeats = Array.isArray(booking.seats) ? booking.seats : [];
     setCancelTargetBooking(booking);
-    setSeatsToCancel(activeSeats);
+    setSeatsToCancel(activeSeats.length > 0 ? [activeSeats[0]] : []);
   };
 
   const handleConfirmCancellation = async () => {
@@ -355,36 +374,82 @@ export default function MyBookings({ isEmbedded = false }) {
     try {
       setIsProcessingCancel(true);
       const bookingId = cancelTargetBooking._id || cancelTargetBooking.bookingId;
-      const count = cancelTargetBooking.seats?.length || 1;
-      const pricePerSeat = Math.round(
+      const count =
+        (cancelTargetBooking.seats?.length || 0) +
+        (cancelTargetBooking.cancelledSeats?.length || 0) || 1;
+      const basePerSeat = Math.round(
         (cancelTargetBooking.originalTotalAmount || cancelTargetBooking.totalAmount) / count
       );
-      const refundCalculated = Math.round(pricePerSeat * seatsToCancel.length * 0.9);
+      const refundCalculated = Math.round(basePerSeat * seatsToCancel.length * 0.9);
 
-      await api.put(`/api/bookings/${bookingId}/cancel-seats`, {
+      const response = await api.put(`/api/bookings/${bookingId}/cancel-seats`, {
         seatsToCancel,
         refundAmount: refundCalculated,
         payoutDestination: selectedPayoutId,
       });
 
+      const updatedBooking = response.data?.booking;
+
       toast.success(
         `Cancelled ${seatsToCancel.length} seat(s). Refund of ₹${refundCalculated} initiated!`
       );
       setCancelTargetBooking(null);
+
+      // Immediately update local state so ticket and view regenerate instantly without waiting
+      if (updatedBooking) {
+        setBookings((prev) =>
+          prev.map((b) =>
+            (b._id === updatedBooking._id || b.bookingId === updatedBooking._id)
+              ? { ...updatedBooking, calculatedStatus: calculateBookingStatus(updatedBooking) }
+              : b
+          )
+        );
+        if (
+          selectedBookingForDetails &&
+          (selectedBookingForDetails._id === updatedBooking._id ||
+            selectedBookingForDetails.bookingId === updatedBooking._id)
+        ) {
+          setSelectedBookingForDetails({
+            ...updatedBooking,
+            calculatedStatus: calculateBookingStatus(updatedBooking),
+          });
+        }
+      }
       fetchBookingsData();
     } catch {
       // Offline fallback
       setBookings((prev) =>
         prev.map((b) => {
           if (b._id === cancelTargetBooking._id || b.bookingId === cancelTargetBooking.bookingId) {
-            return {
+            const count =
+              (b.seats?.length || 0) + (b.cancelledSeats?.length || 0) || 1;
+            const basePerSeat = Math.round(
+              (b.originalTotalAmount || b.totalAmount) / count
+            );
+            const remaining = (b.seats || []).filter((s) => !seatsToCancel.includes(s));
+            const newTotal = Math.max(0, (b.totalAmount || 0) - basePerSeat * seatsToCancel.length);
+            const isFullyCancelled = remaining.length === 0;
+
+            const updatedObj = {
               ...b,
-              status: "cancelled",
-              calculatedStatus: "Cancelled",
+              seats: remaining,
+              cancelledSeats: [...new Set([...(b.cancelledSeats || []), ...seatsToCancel])],
+              totalAmount: isFullyCancelled ? 0 : newTotal,
+              status: isFullyCancelled ? "cancelled" : "partially_cancelled",
+              calculatedStatus: isFullyCancelled ? "Cancelled" : "Partially Cancelled",
+              paymentStatus: isFullyCancelled ? "Refunded" : "Partially Refunded",
               tickets: (b.tickets || []).map((t) =>
                 seatsToCancel.includes(t.seatNumber) ? { ...t, status: "cancelled" } : t
               ),
             };
+
+            if (
+              selectedBookingForDetails &&
+              (selectedBookingForDetails._id === b._id || selectedBookingForDetails.bookingId === b.bookingId)
+            ) {
+              setSelectedBookingForDetails(updatedObj);
+            }
+            return updatedObj;
           }
           return b;
         })
@@ -549,12 +614,13 @@ export default function MyBookings({ isEmbedded = false }) {
             const category = getSeatCategoryName(b.seats);
             const seatList = Array.isArray(b.seats) ? b.seats : [b.seats || "A1"];
             const tickets = b.tickets || [];
-            const activeTickets = tickets.filter((t) => t.status === "confirmed");
-            const hasActiveTickets = activeTickets.length > 0;
+            const hasActiveSeats = (b.seats || []).length > 0;
             const formats = getMovieFormats(movie);
             const formatLabel = b.format || (formats.length > 0 ? formats[0] : "2D");
             const bId = b.bookingId || b._id;
-            const isCancellable = (status === "Upcoming" || status === "Today") && hasActiveTickets;
+            const isCancellable =
+              (status === "Upcoming" || status === "Today" || status === "Partially Cancelled") &&
+              hasActiveSeats;
 
             // Border color by status
             const statusBorder =
@@ -562,6 +628,8 @@ export default function MyBookings({ isEmbedded = false }) {
                 ? "border-info"
                 : status === "Today"
                 ? "border-success"
+                : status === "Partially Cancelled"
+                ? "border-warning"
                 : status === "Completed"
                 ? "border-secondary"
                 : "border-danger";
@@ -625,6 +693,11 @@ export default function MyBookings({ isEmbedded = false }) {
                           <i className="fa-solid fa-check-double me-1"></i> Completed Show
                         </span>
                       )}
+                      {status === "Partially Cancelled" && (
+                        <span className="badge bg-warning bg-opacity-25 text-warning border border-warning border-opacity-50 px-2 py-1">
+                          <i className="fa-solid fa-triangle-exclamation me-1"></i> Partially Cancelled
+                        </span>
+                      )}
                       {status === "Cancelled" && (
                         <span className="badge bg-danger bg-opacity-25 text-danger border border-danger border-opacity-25 px-2 py-1">
                           <i className="fa-solid fa-ban me-1"></i> Cancelled
@@ -680,29 +753,35 @@ export default function MyBookings({ isEmbedded = false }) {
 
                     {/* Seats & Tier Breakdown */}
                     <div className="d-flex align-items-center gap-2 mb-2 flex-wrap">
-                      <span className="text-secondary small fw-bold">Seats:</span>
-                      {seatList.map((s) => {
-                        const ticketObj = tickets.find((t) => t.seatNumber === s);
-                        const isSeatCancelled = ticketObj?.status === "cancelled" || status === "Cancelled";
-                        return (
-                          <span
-                            key={s}
-                            className={`badge ${
-                              isSeatCancelled
-                                ? "bg-secondary text-decoration-line-through opacity-75"
-                                : "bg-danger"
-                            } px-2 py-1`}
-                            style={{ fontSize: "0.82rem" }}
-                          >
-                            {s}
-                          </span>
-                        );
-                      })}
+                      <span className="text-secondary small fw-bold">Active Seats:</span>
+                      {seatList.map((s) => (
+                        <span
+                          key={s}
+                          className="badge bg-danger px-2 py-1"
+                          style={{ fontSize: "0.82rem" }}
+                        >
+                          Seat {s}
+                        </span>
+                      ))}
+                      {b.cancelledSeats && b.cancelledSeats.length > 0 && (
+                        <>
+                          <span className="text-secondary small ms-2 fw-bold">Cancelled:</span>
+                          {b.cancelledSeats.map((cs) => (
+                            <span
+                              key={cs}
+                              className="badge bg-secondary text-decoration-line-through opacity-75 px-2 py-1"
+                              style={{ fontSize: "0.82rem" }}
+                            >
+                              Seat {cs}
+                            </span>
+                          ))}
+                        </>
+                      )}
                       <span className="badge bg-secondary bg-opacity-50 text-light px-2 py-1 small">
                         {category}
                       </span>
                       <span className="text-secondary small">
-                        ({seatList.length} {seatList.length === 1 ? "Ticket" : "Tickets"})
+                        ({seatList.length} Active {seatList.length === 1 ? "Ticket" : "Tickets"})
                       </span>
                     </div>
 
@@ -727,15 +806,26 @@ export default function MyBookings({ isEmbedded = false }) {
                   {/* Right Column: Pricing & Quick Actions */}
                   <div className="col-12 col-md-3 text-md-end d-flex flex-column justify-content-between h-100">
                     <div>
-                      <span className="text-secondary small d-block">Total Paid</span>
+                      <span className="text-secondary small d-block">
+                        {b.cancelledSeats?.length > 0 ? "Updated Total" : "Total Paid"}
+                      </span>
                       <h3 className="text-success fw-bold mb-0">
-                        ₹{(b.totalAmount || b.originalTotalAmount || 0).toLocaleString()}
+                        ₹{(b.totalAmount ?? 0).toLocaleString()}
                       </h3>
+                      {b.originalTotalAmount && b.originalTotalAmount !== b.totalAmount && (
+                        <span className="text-secondary small text-decoration-line-through d-block">
+                          Original: ₹{b.originalTotalAmount.toLocaleString()}
+                        </span>
+                      )}
                       <span
-                        className="badge bg-success bg-opacity-25 text-success border border-success border-opacity-25 mt-1"
+                        className={`badge ${
+                          status === "Partially Cancelled"
+                            ? "bg-warning bg-opacity-25 text-warning border border-warning border-opacity-50"
+                            : "bg-success bg-opacity-25 text-success border border-success border-opacity-25"
+                        } mt-1`}
                         style={{ fontSize: "0.7rem" }}
                       >
-                        {b.paymentStatus || "Paid"}
+                        {b.paymentStatus || (status === "Partially Cancelled" ? "Partially Refunded" : "Paid")}
                       </span>
                     </div>
 
@@ -773,7 +863,8 @@ export default function MyBookings({ isEmbedded = false }) {
                           className="btn btn-outline-danger btn-sm py-1 px-3"
                           title="Cancel booking or individual seats"
                         >
-                          <i className="fa-solid fa-ban me-1"></i> Cancel Booking
+                          <i className="fa-solid fa-ban me-1"></i>{" "}
+                          {status === "Partially Cancelled" ? "Cancel More Seats" : "Cancel Booking"}
                         </button>
                       )}
 
@@ -801,13 +892,16 @@ export default function MyBookings({ isEmbedded = false }) {
         const theatre = resolveTheatre(b);
         const status = b.calculatedStatus || calculateBookingStatus(b);
         const dt = formatShowDateTime(b.show?.showTime || b.showDate, b.showTime);
-        const seatList = Array.isArray(b.seats) ? b.seats : [b.seats || "A1"];
+        const seatList = Array.isArray(b.seats) ? b.seats : [];
         const bId = b.bookingId || b._id;
-        const baseAmount = b.originalTotalAmount || b.totalAmount || 0;
-        const convenienceFee = 30;
-        const gst = Math.round(convenienceFee * 0.18);
-        const totalPaid = b.totalAmount || (baseAmount + convenienceFee + gst);
-        const qrUrl = `https://api.qrserver.com/v1/create-qr-code/?size=180x180&data=SCREENLY_${bId}`;
+        const totalPaid = b.totalAmount ?? 0;
+        const isPartiallyCancelled =
+          status === "Partially Cancelled" ||
+          (b.cancelledSeats && b.cancelledSeats.length > 0 && seatList.length > 0);
+        const qrData = encodeURIComponent(
+          `SCREENLY_${bId}_SEATS_${seatList.join("-")}_STATUS_${status}`
+        );
+        const qrUrl = `https://api.qrserver.com/v1/create-qr-code/?size=180x180&data=${qrData}`;
 
         return (
           <div
@@ -816,25 +910,41 @@ export default function MyBookings({ isEmbedded = false }) {
             style={{ backgroundColor: "rgba(0,0,0,0.85)", zIndex: 1060 }}
           >
             <div className="modal-dialog modal-lg modal-dialog-centered modal-dialog-scrollable">
-              <div className="modal-content glass-panel border-0 text-white overflow-hidden shadow-2xl" style={{ background: "#111422" }}>
+              <div
+                className="modal-content glass-panel border-0 text-white overflow-hidden shadow-2xl"
+                style={{ background: "#111422" }}
+              >
                 {/* Backdrop Banner Header */}
                 <div
                   className="position-relative p-4 d-flex justify-content-between align-items-end"
                   style={{
                     height: "180px",
-                    backgroundImage: `linear-gradient(180deg, rgba(17,20,34,0.4) 0%, #111422 100%), url(${getBackdropUrl(movie)})`,
+                    backgroundImage: `linear-gradient(180deg, rgba(17,20,34,0.4) 0%, #111422 100%), url(${getBackdropUrl(
+                      movie
+                    )})`,
                     backgroundSize: "cover",
                     backgroundPosition: "center",
                   }}
                 >
                   <div>
                     <div className="d-flex align-items-center gap-2 mb-2">
-                      <span className="badge bg-danger">Verified Ticket Pass</span>
+                      <span
+                        className={`badge ${
+                          isPartiallyCancelled
+                            ? "bg-warning text-dark fw-bold"
+                            : "bg-danger"
+                        }`}
+                      >
+                        {isPartiallyCancelled
+                          ? "Partially Cancelled Pass"
+                          : "Verified Ticket Pass"}
+                      </span>
                       <span className="badge bg-secondary bg-opacity-75">{status}</span>
                     </div>
                     <h3 className="fw-bold mb-0">{getMovieTitle(movie)}</h3>
                     <span className="text-secondary small">
-                      {movie.language || "Hindi"} &bull; {b.format || "2D"} &bull; {movie.certification || "U/A"}
+                      {movie.language || "Hindi"} &bull; {b.format || "2D"} &bull;{" "}
+                      {movie.certification || "U/A"}
                     </span>
                   </div>
                   <button
@@ -855,8 +965,15 @@ export default function MyBookings({ isEmbedded = false }) {
                         style={{ maxHeight: "220px", objectFit: "cover" }}
                       />
                       <div className="p-3 rounded-3 border border-secondary border-opacity-25 bg-white text-dark d-inline-block">
-                        <img src={qrUrl} alt="Booking QR Code" style={{ width: "130px", height: "130px" }} />
-                        <span className="d-block small fw-bold mt-1 text-center font-monospace" style={{ fontSize: "0.68rem" }}>
+                        <img
+                          src={qrUrl}
+                          alt="Booking QR Code"
+                          style={{ width: "130px", height: "130px" }}
+                        />
+                        <span
+                          className="d-block small fw-bold mt-1 text-center font-monospace"
+                          style={{ fontSize: "0.68rem" }}
+                        >
                           SCAN AT CINEMA GATE
                         </span>
                       </div>
@@ -866,25 +983,32 @@ export default function MyBookings({ isEmbedded = false }) {
                     <div className="col-12 col-md-8">
                       {/* Multiplex & Screen */}
                       <div className="mb-3 border-bottom border-secondary border-opacity-25 pb-3">
-                        <h6 className="text-danger fw-bold text-uppercase small mb-1">Cinema Venue</h6>
+                        <h6 className="text-danger fw-bold text-uppercase small mb-1">
+                          Cinema Venue
+                        </h6>
                         <h5 className="text-white fw-bold mb-0">{theatre.name}</h5>
                         <div className="text-secondary small">
                           {theatre.location || "City Centre"}, {theatre.city}
                         </div>
                         <div className="text-info small fw-semibold mt-1">
-                          <i className="fa-solid fa-tv me-1"></i> Auditorium: {b.screen || b.screenId || "Screen 1"}
+                          <i className="fa-solid fa-tv me-1"></i> Auditorium:{" "}
+                          {b.screen || b.screenId || "Screen 1"}
                         </div>
                       </div>
 
                       {/* Show Time */}
                       <div className="mb-3 border-bottom border-secondary border-opacity-25 pb-3">
-                        <h6 className="text-danger fw-bold text-uppercase small mb-1">Date &amp; Time</h6>
+                        <h6 className="text-danger fw-bold text-uppercase small mb-1">
+                          Date &amp; Time
+                        </h6>
                         <div className="text-white fw-bold">{dt.combined}</div>
                       </div>
 
                       {/* Seats Breakdown */}
                       <div className="mb-3 border-bottom border-secondary border-opacity-25 pb-3">
-                        <h6 className="text-danger fw-bold text-uppercase small mb-1">Seats &amp; Tickets</h6>
+                        <h6 className="text-danger fw-bold text-uppercase small mb-1">
+                          Active Seats &amp; Tickets
+                        </h6>
                         <div className="d-flex flex-wrap gap-2 mb-1">
                           {seatList.map((s) => (
                             <span key={s} className="badge bg-danger px-2 py-1 fs-6">
@@ -893,41 +1017,82 @@ export default function MyBookings({ isEmbedded = false }) {
                           ))}
                         </div>
                         <span className="text-secondary small">
-                          Category: <strong className="text-white">{getSeatCategoryName(seatList)}</strong> &bull; {seatList.length} Reserved Ticket(s)
+                          Category:{" "}
+                          <strong className="text-white">
+                            {getSeatCategoryName(seatList)}
+                          </strong>{" "}
+                          &bull; {seatList.length} Active Ticket(s)
                         </span>
+
+                        {b.cancelledSeats && b.cancelledSeats.length > 0 && (
+                          <div className="mt-2 text-secondary small">
+                            <span className="badge bg-secondary bg-opacity-50 text-decoration-line-through me-1">
+                              Cancelled Seats: {b.cancelledSeats.join(", ")}
+                            </span>
+                            <span>(Removed from active ticket pass)</span>
+                          </div>
+                        )}
                       </div>
 
                       {/* Price Breakdown */}
                       <div className="mb-3 border-bottom border-secondary border-opacity-25 pb-3">
-                        <h6 className="text-danger fw-bold text-uppercase small mb-2">Price Breakdown</h6>
+                        <h6 className="text-danger fw-bold text-uppercase small mb-2">
+                          Price Breakdown
+                        </h6>
                         <div className="d-flex justify-content-between small text-secondary mb-1">
-                          <span>Base Ticket Price ({seatList.length} seats):</span>
-                          <span className="text-white">₹{baseAmount}</span>
+                          <span>Active Ticket Price ({seatList.length} seats):</span>
+                          <span className="text-white">₹{totalPaid}</span>
                         </div>
-                        <div className="d-flex justify-content-between small text-secondary mb-1">
-                          <span>Convenience Fee:</span>
-                          <span className="text-white">₹{convenienceFee}</span>
-                        </div>
-                        <div className="d-flex justify-content-between small text-secondary mb-1">
-                          <span>Integrated GST (18%):</span>
-                          <span className="text-white">₹{gst}</span>
-                        </div>
+                        {b.originalTotalAmount &&
+                          b.originalTotalAmount !== totalPaid && (
+                            <div className="d-flex justify-content-between small text-secondary mb-1">
+                              <span>Original Total Amount:</span>
+                              <span className="text-secondary text-decoration-line-through">
+                                ₹{b.originalTotalAmount}
+                              </span>
+                            </div>
+                          )}
+                        {b.refundAmount > 0 && (
+                          <div className="d-flex justify-content-between small text-secondary mb-1">
+                            <span>Total Refund Issued:</span>
+                            <span className="text-success fw-semibold">
+                              ₹{b.refundAmount}
+                            </span>
+                          </div>
+                        )}
                         <div className="d-flex justify-content-between fw-bold text-white fs-5 mt-2 pt-2 border-top border-secondary border-opacity-25">
-                          <span>Total Paid:</span>
-                          <span className="text-success">₹{totalPaid.toLocaleString()}</span>
+                          <span>Updated Total Amount:</span>
+                          <span className="text-success">
+                            ₹{totalPaid.toLocaleString()}
+                          </span>
                         </div>
                       </div>
 
                       {/* Payment Audit References */}
                       <div className="small text-secondary">
                         <div>
-                          Booking ID: <strong className="text-light font-monospace">#{String(bId).toUpperCase()}</strong>
+                          Booking ID:{" "}
+                          <strong className="text-light font-monospace">
+                            #{String(bId).toUpperCase()}
+                          </strong>
                         </div>
                         <div>
-                          Transaction Reference: <strong className="text-light font-monospace">{b.transactionId || `TXN${String(bId).slice(-8)}`}</strong>
+                          Transaction Reference:{" "}
+                          <strong className="text-light font-monospace">
+                            {b.transactionId || `TXN${String(bId).slice(-8)}`}
+                          </strong>
                         </div>
                         <div>
-                          Payment Status: <span className="badge bg-success bg-opacity-25 text-success">{b.paymentStatus || "Paid"}</span>
+                          Payment Status:{" "}
+                          <span
+                            className={`badge ${
+                              isPartiallyCancelled
+                                ? "bg-warning bg-opacity-25 text-warning"
+                                : "bg-success bg-opacity-25 text-success"
+                            }`}
+                          >
+                            {b.paymentStatus || (isPartiallyCancelled ? "Partially Refunded" : "Paid")}
+                          </span>
                         </div>
                       </div>
                     </div>
@@ -964,7 +1129,12 @@ export default function MyBookings({ isEmbedded = false }) {
       {qrModalBooking && (() => {
         const b = qrModalBooking;
         const bId = b.bookingId || b._id;
-        const qrUrl = `https://api.qrserver.com/v1/create-qr-code/?size=250x250&data=SCREENLY_${bId}`;
+        const status = b.calculatedStatus || calculateBookingStatus(b);
+        const seatList = Array.isArray(b.seats) ? b.seats : [];
+        const qrData = encodeURIComponent(
+          `SCREENLY_${bId}_SEATS_${seatList.join("-")}_STATUS_${status}`
+        );
+        const qrUrl = `https://api.qrserver.com/v1/create-qr-code/?size=250x250&data=${qrData}`;
         return (
           <div
             className="modal fade show d-block"
@@ -972,14 +1142,28 @@ export default function MyBookings({ isEmbedded = false }) {
             style={{ backgroundColor: "rgba(0,0,0,0.85)", zIndex: 1060 }}
           >
             <div className="modal-dialog modal-sm modal-dialog-centered">
-              <div className="modal-content glass-panel border-0 text-white text-center p-4 shadow-2xl" style={{ background: "#111422" }}>
+              <div
+                className="modal-content glass-panel border-0 text-white text-center p-4 shadow-2xl"
+                style={{ background: "#111422" }}
+              >
                 <h5 className="fw-bold text-white mb-1">Cinema Gate Entry Pass</h5>
-                <p className="text-secondary small mb-3">Scan this code at the usher barrier</p>
+                <p className="text-secondary small mb-3">
+                  {status === "Partially Cancelled"
+                    ? "Updated Pass for Active Seats"
+                    : "Scan this code at the usher barrier"}
+                </p>
                 <div className="bg-white p-3 rounded-3 d-inline-block shadow mx-auto mb-3">
-                  <img src={qrUrl} alt="Entry Pass QR" style={{ width: "200px", height: "200px" }} />
+                  <img
+                    src={qrUrl}
+                    alt="Entry Pass QR"
+                    style={{ width: "200px", height: "200px" }}
+                  />
                 </div>
-                <div className="font-monospace small text-light fw-bold mb-3">
+                <div className="font-monospace small text-light fw-bold mb-1">
                   PASS: #{String(bId).slice(-8).toUpperCase()}
+                </div>
+                <div className="small text-secondary mb-3">
+                  Active Seats: {seatList.join(", ") || "None"}
                 </div>
                 <button
                   type="button"
@@ -997,9 +1181,17 @@ export default function MyBookings({ isEmbedded = false }) {
       {/* ================= MODAL 3: CANCELLATION MODAL ================= */}
       {cancelTargetBooking && (() => {
         const b = cancelTargetBooking;
-        const count = b.seats?.length || 1;
-        const pricePerSeat = Math.round((b.originalTotalAmount || b.totalAmount) / count);
-        const refundEstimate = Math.round(pricePerSeat * seatsToCancel.length * 0.9);
+        const count =
+          (b.seats?.length || 0) + (b.cancelledSeats?.length || 0) || 1;
+        const pricePerSeat = Math.round(
+          (b.originalTotalAmount || b.totalAmount) / count
+        );
+        const refundEstimate = Math.round(
+          pricePerSeat * seatsToCancel.length * 0.9
+        );
+        const remainingAfterCancel = (b.seats || []).filter(
+          (s) => !seatsToCancel.includes(s)
+        );
 
         return (
           <div
@@ -1008,7 +1200,10 @@ export default function MyBookings({ isEmbedded = false }) {
             style={{ backgroundColor: "rgba(0,0,0,0.85)", zIndex: 1060 }}
           >
             <div className="modal-dialog modal-dialog-centered">
-              <div className="modal-content glass-panel border-0 text-white p-4 shadow-2xl" style={{ background: "#111422" }}>
+              <div
+                className="modal-content glass-panel border-0 text-white p-4 shadow-2xl"
+                style={{ background: "#111422" }}
+              >
                 <div className="d-flex justify-content-between align-items-center mb-3">
                   <h5 className="text-white fw-bold mb-0">Cancel Ticket Reservation</h5>
                   <button
@@ -1024,7 +1219,9 @@ export default function MyBookings({ isEmbedded = false }) {
 
                 {/* Seat Checkboxes */}
                 <div className="mb-3">
-                  <label className="text-secondary small fw-bold mb-2 d-block">Select Seats to Cancel:</label>
+                  <label className="text-secondary small fw-bold mb-2 d-block">
+                    Select Active Seats to Cancel:
+                  </label>
                   <div className="d-flex flex-wrap gap-2">
                     {(b.seats || []).map((s) => {
                       const isChecked = seatsToCancel.includes(s);
@@ -1051,14 +1248,27 @@ export default function MyBookings({ isEmbedded = false }) {
                 </div>
 
                 {/* Refund Summary */}
-                <div className="p-3 rounded-3 border border-secondary border-opacity-25 mb-4" style={{ background: "rgba(255,255,255,0.03)" }}>
+                <div
+                  className="p-3 rounded-3 border border-secondary border-opacity-25 mb-4"
+                  style={{ background: "rgba(255,255,255,0.03)" }}
+                >
                   <div className="d-flex justify-content-between small text-secondary mb-1">
-                    <span>Seats Selected:</span>
-                    <span className="text-white">{seatsToCancel.length}</span>
+                    <span>Seats Selected to Cancel:</span>
+                    <span className="text-white fw-bold">{seatsToCancel.length}</span>
+                  </div>
+                  <div className="d-flex justify-content-between small text-secondary mb-1">
+                    <span>Remaining Seats After Cancellation:</span>
+                    <span className="text-info fw-bold">
+                      {remainingAfterCancel.length > 0
+                        ? remainingAfterCancel.join(", ")
+                        : "None (Full Cancellation)"}
+                    </span>
                   </div>
                   <div className="d-flex justify-content-between small text-secondary mb-1">
                     <span>Cancellation Fee (10%):</span>
-                    <span className="text-danger">- ₹{Math.round(pricePerSeat * seatsToCancel.length * 0.1)}</span>
+                    <span className="text-danger">
+                      - ₹{Math.round(pricePerSeat * seatsToCancel.length * 0.1)}
+                    </span>
                   </div>
                   <div className="d-flex justify-content-between fw-bold text-white border-top border-secondary border-opacity-25 pt-2 mt-2">
                     <span>Estimated Refund:</span>
@@ -1080,7 +1290,9 @@ export default function MyBookings({ isEmbedded = false }) {
                     onClick={handleConfirmCancellation}
                     className="btn btn-danger px-4 fw-bold"
                   >
-                    {isProcessingCancel ? "Processing..." : `Confirm Cancellation (₹${refundEstimate})`}
+                    {isProcessingCancel
+                      ? "Processing..."
+                      : `Confirm Cancellation (₹${refundEstimate})`}
                   </button>
                 </div>
               </div>
