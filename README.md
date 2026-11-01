@@ -348,25 +348,6 @@ Because this is a student learning project:
 
 ---
 
-## Future Improvements
-
-Features that could be added in future versions:
-- Integration with an actual payment gateway such as Razorpay or Stripe (test mode).
-- Mobile responsive web app or mobile app using React Native.
-- Social login integration (Google OAuth).
-- Personalized movie recommendation system based on user booking history.
-- Browser notifications or reminders before showtime.
-
----
-
-## Author
-
-**Satya Rusia**  
-B.Tech Computer Science & Engineering  
-Medi-Caps University  
-
----
-
 ## Academic Note
 
 This project was developed as part of my learning in Full Stack Web Development and is intended for educational and academic evaluation purposes.
