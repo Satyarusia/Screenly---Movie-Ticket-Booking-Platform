@@ -1,21 +1,94 @@
-# Dependencies
+# ==============================================================================
+# GitHub Standard .gitignore for Node.js / React / MERN Applications
+# ==============================================================================
+
+# 1. Dependency Directories
 node_modules/
+*/node_modules/
 client/node_modules/
 server/node_modules/
+jspm_packages/
+web_modules/
 
-# Production builds
-client/dist/
-dist/
-
-# Environment files
+# 2. Environment Variables & Secret Credentials
 .env
+.env.local
+.env.development.local
+.env.test.local
+.env.production.local
+*.env
+*.env.*
+!*.env.example
+client/.env
+client/.env.local
 server/.env
-*.env.local
+server/.env.local
 
-# Logs and temporary files
+# 3. Production Builds & Compiled Assets
+dist/
+dist-ssr/
+build/
+client/dist/
+client/build/
+*.local
+
+# 4. Logs, Runtime Diagnostics & Debugging
+logs/
 *.log
 npm-debug.log*
 yarn-debug.log*
-.DS_Store
-Thumbs.db
+yarn-error.log*
+pnpm-debug.log*
+lerna-debug.log*
+report.[0-9]*.[0-9]*.[0-9]*.[0-9]*.json
 
+# 5. Runtime Data, Locks & Process IDs
+pids/
+*.pid
+*.seed
+*.pid.lock
+
+# 6. Testing, Coverage & Instrumentation
+coverage/
+*.lcov
+.nyc_output/
+.clinic/
+
+# 7. Cache & Build Metadata
+.cache/
+.parcel-cache/
+.eslintcache
+.stylelintcache
+*.tsbuildinfo
+.npm/
+.yarn-integrity
+
+# 8. IDE, Text Editors & Operating System Metadata
+# macOS
+.DS_Store
+.AppleDouble
+.LSOverride
+Icon?
+
+# Windows
+Thumbs.db
+ehthumbs.db
+[Dd]esktop.ini
+$RECYCLE.BIN/
+
+# Visual Studio Code & JetBrains
+.idea/
+*.suo
+*.ntvs*
+*.njsproj
+*.sln
+*.sw?
+.vscode/*
+!.vscode/extensions.json
+!.vscode/settings.json
+!.vscode/launch.json
+
+# 9. Temporary Files & Scratch Directories
+tmp/
+temp/
+.temp/
