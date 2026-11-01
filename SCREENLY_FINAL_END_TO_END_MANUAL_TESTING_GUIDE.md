@@ -29,7 +29,7 @@
    - [1.7 Guest Booking Guard & Authentication Redirect](#17-guest-booking-guard--authentication-redirect)
    - [1.8 User Registration & Input Validation](#18-user-registration--input-validation)
    - [1.9 User Authentication & Auto Role Routing](#19-user-authentication--auto-role-routing)
-   - [1.10 Forgot Password Simulation](#110-forgot-password-simulation)
+   - [1.10 Authentication Security & Direct Credential Access](#110-authentication-security--direct-credential-access)
    - [1.11 Protected Route Authorization & 404 Error Handling](#111-protected-route-authorization--404-error-handling)
 3. [Module 2: Registered User Experience & Booking Engine](#module-2-registered-user-experience--booking-engine)
    - [2.1 User Profile Management & Session Persistence](#21-user-profile-management--session-persistence)
@@ -660,10 +660,9 @@ Accounts exist in MongoDB (`user@imovies.com` and `admin@imovies.com`).
    - Email Input.
    - Password Input with Show/Hide toggle.
    - "Remember Me" checkbox.
-   - "Forgot Password?" link.
    - "Sign In" button.
    - "Don't have an account? Sign Up" link.
-   - **Verification**: Ensure no demo role buttons ("Customer", "Admin", quick fill) exist on the page.
+   - **Verification**: Ensure no demo role buttons ("Customer", "Admin", quick fill) or unauthenticated password reset links exist on the page.
 3. **Test Customer Login**:
    - Enter `user@imovies.com` and `user123`.
    - Click **Sign In**.
@@ -703,10 +702,10 @@ Customer lands on `/` or redirect target; Admin lands on `/admin`.
 
 ---
 
-## 1.10 Real Email Password Recovery & OTP Reset Flow
+## 1.10 Authentication Security & Direct Credential Access
 
 ### Purpose
-Verify the real self-service password recovery flow: sending a secure 6-digit OTP to the user's registered email address, enforcing attempts, and resetting the password securely in MongoDB.
+Verify that authentication relies on direct credential verification without external email or OTP dependencies, protecting user accounts from email intercept vectors.
 
 ### User Role
 Guest / Registered User
@@ -715,51 +714,32 @@ Guest / Registered User
 Login Page (`/login`)
 
 ### Navigation Path
-Click **Forgot Password?** link -> routes to `/forgot-password`.
-
-### Preconditions
-Target email registered in MongoDB (`user@imovies.com` or custom registered user).
-
-### Test Data
-Email: `user@imovies.com`
+Direct visit to `/login` or redirect from protected booking actions.
 
 ### Step-by-Step Actions
-1. Click **Forgot Password?** on the Login page.
-2. Enter registered email address (`user@imovies.com`).
-3. Click **Send Verification Code**.
-4. Observe the confirmation toast: *"A verification code has been sent to your registered email address."* (The OTP is never displayed in the UI).
-5. Enter the 6-digit verification code sent to the email (or view backend console output when in development mode).
-6. Enter New Password and Confirm Password.
-7. Click **Reset Password**.
+1. Open `/login`.
+2. Verify that no email OTP recovery links or forms exist on the interface.
+3. Test credential authentication with valid registered credentials (`user@imovies.com` / `user123`).
+4. Verify user authentication succeeds immediately with JWT token issuance.
 
 ### What I Should See Next
-- Success toast notification: *"Password reset successfully! You can now sign in with your new password."*
-- Transition to Step 3 confirmation screen with **Back to Sign In** button.
-- User can immediately log in with their newly configured password.
+- User session is established and customer is redirected to Home or intended destination.
+- No external email service triggers or dependency prompts appear.
 
 ### Expected Result
-System validates registered email, creates a secure random 6-digit OTP with a 15-minute expiration timestamp, dispatches transactional email via Nodemailer, verifies the entered code, hashes the new password with bcrypt, updates MongoDB, and invalidates the one-time code.
+Screenly enforces streamlined, self-contained authentication with zero mail server dependencies.
 
 ### Backend Activity
-`POST /api/auth/forgot-password` generates OTP, stores expiry, and sends email. `POST /api/auth/reset-password` verifies OTP, checks attempts, and updates the bcrypt hash.
+`POST /api/auth/login` checks credentials using `bcrypt.compare()` and issues a secure JWT.
 
 ### Database Changes
-MongoDB `users` collection: `resetPasswordOtp`, `resetPasswordExpires`, and `password` updated.
+User `lastLogin` timestamp updated.
 
 ### API Calls
-- `POST /api/auth/forgot-password` -> Payload: `{ email: "user@imovies.com" }` -> Status `200 OK`
-- `POST /api/auth/reset-password` -> Payload: `{ email: "user@imovies.com", code: "...", newPassword: "..." }` -> Status `200 OK`
+- `POST /api/auth/login` -> Payload: `{ email, password }` -> Status `200 OK`
 
 ### Success Criteria
-OTP is transmitted via Nodemailer, never leaked in API response or UI; password successfully updated and can be used for login.
-
-### Failure Cases
-- **Failure 1**: Unregistered email entered (`notfound@screenly.in`).
-  - *Expected Result*: Error toast *"No Screenly account is registered with this email"*; status `404 Not Found`.
-- **Failure 2**: Incorrect OTP entered.
-  - *Expected Result*: Error message showing remaining attempts allowed; status `400 Bad Request`.
-- **Failure 3**: Expired code entered (after 15 minutes).
-  - *Expected Result*: Error message *"The verification code has expired. Please request a new verification code."*
+Authentication operates autonomously and reliably without SMTP or email transports.
 
 ---
 
@@ -1205,7 +1185,7 @@ Countdown runs synchronously; seats are blocked for other sessions.
 ## 2.7 Secure Payment Gateway & Order Breakdown
 
 ### Purpose
-Verify itemized order breakdown (ticket subtotal, convenience fee, GST, total), payment authorization across multiple payment methods (UPI, Cards, Net Banking), and automated confirmation email dispatch.
+Verify itemized order breakdown (ticket subtotal, convenience fee, GST, total), payment authorization across multiple payment methods (UPI, Cards, Net Banking), and instant digital ticket pass generation.
 
 ### User Role
 Registered User
@@ -1246,23 +1226,23 @@ Seats held during active reservation timer.
 - Success toast: *"Payment Successful! Your ticket pass has been confirmed."*
 - Transition to `/booking-success/:bookingId`.
 - Verified digital admission pass displayed with QR code and print option.
-- Automated booking confirmation email dispatched to user's registered inbox.
+- Instant digital admission pass rendered with scannable QR code.
 
 ### Expected Result
-Payment authorization completes successfully, confirms booking in MongoDB with verified transaction ID (`PAY...`), permanently locks seats in `Show.bookedSeats`, and dispatches a rich HTML confirmation email.
+Payment authorization completes successfully, confirms booking in MongoDB with verified transaction ID (`PAY...`), permanently locks seats in `Show.bookedSeats`, and returns confirmed booking details.
 
 ### Backend Activity
-`POST /api/bookings/:id/pay` confirms booking, updates payment status to `Success`, sets permanent seat reservation, and triggers `sendBookingConfirmationEmail`.
+`POST /api/bookings/:id/pay` confirms booking, updates payment status to `Success`, sets permanent seat reservation, and returns confirmation status.
 
 ### Database Changes
-1. `bookings` collection: Status updated to `confirmed`, `paymentStatus: "Success"`, `transactionId: "PAY..."`, `emailSent: true`.
+1. `bookings` collection: Status updated to `confirmed`, `paymentStatus: "Success"`, `transactionId: "PAY..."`.
 2. `shows` collection: `bookedSeats` permanently locked with reserved seats.
 
 ### API Calls
 - `POST /api/bookings/:id/pay` -> Payload: `{ paymentMethod }` -> Status `200 OK`
 
 ### Success Criteria
-Booking document marked `confirmed` and `Success`; Show document retains booked seats; confirmation email dispatched.
+Booking document marked `confirmed` and `Success`; Show document retains booked seats; digital pass rendered immediately.
 
 ### Failure Cases
 - **Failure 1**: Reservation timer expires before payment.
@@ -1314,7 +1294,7 @@ Booking ID: e.g., `SCR-2026-8891`
 
 ### What I Should See Next
 - Scannable QR code renders cleanly.
-- Action buttons: **Download Ticket (PDF)**, **Email Ticket**, **View in Booking History**, **Back to Home**.
+- Action buttons: **Download Ticket (PDF)**, **Print Pass**, **View in Booking History**, **Back to Home**.
 
 ### Expected Result
 User receives full proof of reservation with unique scannable verification token.

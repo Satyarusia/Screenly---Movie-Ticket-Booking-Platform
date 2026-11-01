@@ -168,8 +168,8 @@ export default function Login() {
                 </div>
               </div>
 
-              {/* Remember Me & Forgot Password */}
-              <div className="d-flex align-items-center justify-content-between mb-4">
+              {/* Remember Me */}
+              <div className="d-flex align-items-center mb-4">
                 <div className="form-check">
                   <input
                     type="checkbox"
@@ -186,12 +186,6 @@ export default function Login() {
                     Remember me
                   </label>
                 </div>
-                <Link
-                  to="/forgot-password"
-                  className="text-secondary small text-decoration-none hover-white"
-                >
-                  Forgot password?
-                </Link>
               </div>
 
               {/* Submit Button */}

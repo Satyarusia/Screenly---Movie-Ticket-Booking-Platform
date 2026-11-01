@@ -2,7 +2,6 @@ const mongoose = require("mongoose");
 const Booking = require("../models/bookingModel");
 const Show = require("../models/showModel");
 const { releaseExpiredReservations, computeShowLifecycle } = require("./showController");
-const { sendBookingConfirmationEmail } = require("../services/emailService");
 
 const HOLD_MINUTES = 10;
 const MAX_SEATS = 8;
@@ -280,29 +279,9 @@ const processPayment = async (req, res) => {
     const populated = await Booking.findById(booking._id).populate(showDetails);
     const [enriched] = enrichBookingsWithLifecycle([populated]);
 
-    // Dispatch real booking confirmation email in the background
-    const recipientEmail = populated.user?.email || req.user?.email;
-    const recipientName = populated.user?.name || req.user?.name;
-    if (recipientEmail) {
-      sendBookingConfirmationEmail({
-        booking: populated,
-        recipientEmail,
-        recipientName,
-      })
-        .then(async () => {
-          await Booking.updateOne(
-            { _id: booking._id },
-            { emailSent: true, emailSentAt: new Date() }
-          ).catch(() => {});
-        })
-        .catch((mailErr) => {
-          console.error("[Screenly Mailer Error] Confirmation email failed:", mailErr.message);
-        });
-    }
-
     res.json({
       success: true,
-      message: "Payment authorized successfully! Your booking is confirmed and a verified digital pass has been sent to your email.",
+      message: "Payment authorized successfully! Your booking is confirmed and your digital admission pass is ready.",
       booking: enriched,
     });
   } catch (error) {

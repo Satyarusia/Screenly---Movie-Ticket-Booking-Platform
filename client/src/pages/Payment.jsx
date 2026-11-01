@@ -2,7 +2,6 @@
 import { useState, useEffect } from "react";
 import { useParams, useLocation, useNavigate, Link } from "react-router-dom";
 import SeatHoldTimer from "../components/SeatHoldTimer";
-import { sendBookingConfirmationEmail } from "../services/emailService";
 import api from "../services/api";
 import { useAuth } from "../hooks/useAuth";
 import { getPosterUrl, handleImageError } from "../utils/tmdbHelper";
@@ -150,13 +149,6 @@ export default function Payment() {
       const existing = JSON.parse(localStorage.getItem("screenly_user_bookings") || "[]");
       const updated = [finalizedBooking, ...existing.filter((b) => b._id !== booking._id)];
       localStorage.setItem("screenly_user_bookings", JSON.stringify(updated));
-
-      // Client pass delivery record
-      await sendBookingConfirmationEmail({
-        toEmail: user?.email || "customer@screenly.in",
-        customerName: user?.name || "Cinema Enthusiast",
-        booking: finalizedBooking,
-      }).catch(() => { });
 
       setPaymentState("success");
       toast.success("Payment Successful! Your ticket pass has been confirmed.");

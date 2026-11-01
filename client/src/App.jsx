@@ -32,7 +32,6 @@ const MyBookings = lazy(() => import("./pages/MyBookings"));
 // Lazy-loaded Auth & Informational Pages
 const Login = lazy(() => import("./pages/Login"));
 const Register = lazy(() => import("./pages/Register"));
-const ForgotPassword = lazy(() => import("./pages/ForgotPassword"));
 const About = lazy(() => import("./pages/About"));
 const FAQ = lazy(() => import("./pages/FAQ"));
 
@@ -183,7 +182,6 @@ export default function App() {
                   {/* Auth & Info */}
                   <Route path="/login" element={<Login />} />
                   <Route path="/register" element={<Register />} />
-                  <Route path="/forgot-password" element={<ForgotPassword />} />
                   <Route path="/about" element={<About />} />
                   <Route path="/faq" element={<FAQ />} />
 

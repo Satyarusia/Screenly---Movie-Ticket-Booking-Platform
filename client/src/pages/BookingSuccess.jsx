@@ -1,7 +1,6 @@
 // client/src/pages/BookingSuccess.jsx
-import { useState, useMemo } from "react";
+import { useState } from "react";
 import { useParams, useLocation, Link } from "react-router-dom";
-import { getSentEmails } from "../services/emailService";
 import { getPosterUrl, handleImageError } from "../utils/tmdbHelper";
 import toast from "react-hot-toast";
 
@@ -14,13 +13,6 @@ export default function BookingSuccess() {
     const all = JSON.parse(localStorage.getItem("screenly_user_bookings") || "[]");
     return all.find((b) => b._id === bookingId || b.bookingId === bookingId) || null;
   });
-
-  const [showEmailModal, setShowEmailModal] = useState(false);
-
-  const deliveredEmail = useMemo(() => {
-    const emails = getSentEmails();
-    return emails.find((e) => e.bookingId === (booking?._id || booking?.bookingId || bookingId)) || null;
-  }, [booking, bookingId]);
 
   const handlePrint = () => {
     window.print();
@@ -79,7 +71,7 @@ export default function BookingSuccess() {
         </div>
         <h2 className="text-white fw-bold mb-1">Booking Confirmed!</h2>
         <p className="text-success small fw-semibold mb-2">
-          <i className="fa-solid fa-envelope-circle-check me-1"></i> A copy of your verified ticket has been automatically delivered to your registered email.
+          <i className="fa-solid fa-circle-check me-1"></i> Your seats are reserved and your digital cinema pass is ready below.
         </p>
       </div>
 
@@ -91,15 +83,6 @@ export default function BookingSuccess() {
         <button onClick={handlePrint} className="btn btn-secondary-cinema px-4 py-2">
           <i className="fa-solid fa-print me-2"></i> Print Ticket
         </button>
-        {deliveredEmail && (
-          <button
-            onClick={() => setShowEmailModal(true)}
-            className="btn btn-secondary-cinema px-3 py-2 text-info"
-            title="Inspect the automated booking confirmation email"
-          >
-            <i className="fa-solid fa-envelope-open-text me-2"></i> View Confirmation Email
-          </button>
-        )}
         <Link to="/profile" className="btn btn-secondary-cinema px-3 py-2">
           <i className="fa-solid fa-ticket me-1"></i> My Bookings
         </Link>
@@ -226,51 +209,6 @@ export default function BookingSuccess() {
           Screenly Verified Admission Pass &bull; Present at box office or cinema usher kiosk
         </div>
       </div>
-
-      {/* Confirmation Email Inspection Modal */}
-      {showEmailModal && deliveredEmail && (
-        <div
-          className="modal show d-block no-print"
-          style={{ backgroundColor: "rgba(0, 0, 0, 0.8)", zIndex: 1060 }}
-          tabIndex="-1"
-        >
-          <div className="modal-dialog modal-lg modal-dialog-centered modal-dialog-scrollable">
-            <div className="modal-content glass-panel text-white" style={{ background: "#151828", border: "1px solid rgba(255,255,255,0.15)" }}>
-              <div className="modal-header border-secondary border-opacity-25">
-                <div className="d-flex align-items-center gap-2">
-                  <i className="fa-solid fa-envelope-circle-check text-success fs-5"></i>
-                  <h5 className="modal-title fw-bold mb-0">Delivered Booking Confirmation Email</h5>
-                </div>
-                <button
-                  type="button"
-                  className="btn-close btn-close-white"
-                  onClick={() => setShowEmailModal(false)}
-                ></button>
-              </div>
-              <div className="modal-body p-4">
-                <div className="p-3 rounded-2 mb-3 small" style={{ background: "rgba(255,255,255,0.04)" }}>
-                  <div><strong>To:</strong> {deliveredEmail.to}</div>
-                  <div><strong>Subject:</strong> {deliveredEmail.subject}</div>
-                  <div><strong>Delivered:</strong> {new Date(deliveredEmail.sentAt).toLocaleString()}</div>
-                </div>
-                <div
-                  className="rounded-3 overflow-hidden"
-                  dangerouslySetInnerHTML={{ __html: deliveredEmail.html }}
-                />
-              </div>
-              <div className="modal-footer border-secondary border-opacity-25">
-                <button
-                  type="button"
-                  className="btn btn-secondary-cinema"
-                  onClick={() => setShowEmailModal(false)}
-                >
-                  Close Preview
-                </button>
-              </div>
-            </div>
-          </div>
-        </div>
-      )}
     </div>
   );
 }
