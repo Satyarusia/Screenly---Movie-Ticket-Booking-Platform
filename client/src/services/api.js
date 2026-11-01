@@ -10,9 +10,7 @@ const api = axios.create({
 // Request Interceptor: Attach JWT Bearer Token
 api.interceptors.request.use(
   (config) => {
-    const token =
-      localStorage.getItem("screenly_token") ||
-      localStorage.getItem("imovies_token");
+    const token = localStorage.getItem("screenly_token");
     if (token) {
       config.headers.Authorization = `Bearer ${token}`;
     }
@@ -28,7 +26,7 @@ api.interceptors.response.use(
     if (error.response?.status === 401) {
       // Clear invalid token if session expires
       localStorage.removeItem("screenly_token");
-      localStorage.removeItem("imovies_token");
+      localStorage.removeItem("screenly_user");
     }
     return Promise.reject(error);
   }

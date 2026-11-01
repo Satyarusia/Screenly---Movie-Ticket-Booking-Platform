@@ -227,11 +227,11 @@ The backend requires the following 4 environment variables in `server/.env`:
 If you ran `npm run seed` in the backend, the following demo accounts are available for testing:
 
 ### Administrator
-- **Email**: `admin@imovies.com`
+- **Email**: `admin@screenly.com`
 - **Password**: `admin123`
 
 ### Registered User
-- **Email**: `user@imovies.com`
+- **Email**: `user@screenly.com`
 - **Password**: `user123`
 
 *Note: These are demo accounts created for testing and academic evaluation. You can also create a new account using the Register page.*

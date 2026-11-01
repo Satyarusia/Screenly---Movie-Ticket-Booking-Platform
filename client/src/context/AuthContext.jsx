@@ -8,9 +8,7 @@ export const AuthProvider = ({ children }) => {
   // 1. Initial State from localStorage
   const [user, setUser] = useState(() => {
     try {
-      const savedUser =
-        localStorage.getItem("screenly_user") ||
-        localStorage.getItem("imovies_user");
+      const savedUser = localStorage.getItem("screenly_user");
       return savedUser ? JSON.parse(savedUser) : null;
     } catch {
       return null;
@@ -18,10 +16,7 @@ export const AuthProvider = ({ children }) => {
   });
 
   const [token, setToken] = useState(
-    () =>
-      localStorage.getItem("screenly_token") ||
-      localStorage.getItem("imovies_token") ||
-      null
+    () => localStorage.getItem("screenly_token") || null
   );
 
   const [loading, setLoading] = useState(true);
@@ -32,8 +27,6 @@ export const AuthProvider = ({ children }) => {
     setUser(null);
     localStorage.removeItem("screenly_token");
     localStorage.removeItem("screenly_user");
-    localStorage.removeItem("imovies_token");
-    localStorage.removeItem("imovies_user");
   };
 
   // 3. Safe Session Verification on App Startup
@@ -41,9 +34,7 @@ export const AuthProvider = ({ children }) => {
     let isMounted = true;
 
     const verifyUser = async () => {
-      const storedToken =
-        localStorage.getItem("screenly_token") ||
-        localStorage.getItem("imovies_token");
+      const storedToken = localStorage.getItem("screenly_token");
 
       if (storedToken) {
         try {

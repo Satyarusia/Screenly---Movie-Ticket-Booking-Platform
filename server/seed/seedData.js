@@ -852,8 +852,10 @@ const seedDB = async () => {
     console.log("MongoDB Connected!");
 
     // 1. Seed Admin User
-    const adminEmail = "admin@imovies.com";
-    let admin = await User.findOne({ email: adminEmail });
+    const adminEmail = "admin@screenly.com";
+    let admin = await User.findOne({
+      $or: [{ email: adminEmail }, { role: "admin" }],
+    });
     if (!admin) {
       const hashedPassword = await bcrypt.hash("admin123", 10);
       admin = await User.create({
@@ -869,16 +871,19 @@ const seedDB = async () => {
         department: "Cinema Operations",
         lastLogin: new Date(),
       });
-      console.log("Default Admin created: admin@imovies.com / admin123");
+      console.log("Default Admin created: admin@screenly.com / admin123");
     } else {
+      admin.email = adminEmail;
       admin.role = "admin";
       await admin.save();
-      console.log("Admin account confirmed: admin@imovies.com");
+      console.log("Admin account confirmed: admin@screenly.com");
     }
 
     // 2. Seed Regular User
-    const userEmail = "user@imovies.com";
-    let regularUser = await User.findOne({ email: userEmail });
+    const userEmail = "user@screenly.com";
+    let regularUser = await User.findOne({
+      $or: [{ email: userEmail }, { phone: "9123456789" }],
+    });
     if (!regularUser) {
       const hashedPassword = await bcrypt.hash("user123", 10);
       regularUser = await User.create({
@@ -888,7 +893,11 @@ const seedDB = async () => {
         phone: "9123456789",
         role: "user",
       });
-      console.log("Default User created: user@imovies.com / user123");
+      console.log("Default User created: user@screenly.com / user123");
+    } else {
+      regularUser.email = userEmail;
+      await regularUser.save();
+      console.log("User account confirmed: user@screenly.com");
     }
 
     // 3. Upsert Theatres for all 7 target cities
