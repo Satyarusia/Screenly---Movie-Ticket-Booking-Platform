@@ -6,96 +6,93 @@ A full-stack movie ticket booking web application built using the MERN stack (Mo
 
 ## About the Project
 
-Screenly is a web application created as a college learning project to understand how movie ticket booking websites work behind the scenes.
+Screenly is a web application created as a college learning project to explore how online movie ticket booking systems work behind the scenes.
 
-When booking movie tickets online, users go through a complete sequence: browsing currently playing films, checking theatre showtimes, choosing seats from different price tiers, completing payment, and viewing a digital admission ticket with a scannable QR code.
+The application guides users through the typical booking journey: browsing currently playing movies, checking theatre showtimes, choosing seats from different seating sections, completing a simulated payment, and receiving a digital admission pass with a scannable QR code.
 
-The main purpose of this project was to learn and practice full-stack web development by building both the frontend user interface and the backend REST API from scratch.
+The primary goal of this project was to practice full-stack web development by building both the frontend user interface and the backend REST API from scratch.
 
 ---
 
 ## Project Objectives
 
-The key learning goals for this project were:
+The main learning goals for this project were:
 
-- Learning full-stack MERN development (MongoDB, Express.js, React, Node.js).
+- Learning full-stack development with the MERN stack (MongoDB, Express.js, React, Node.js).
 - Designing database schemas and relationships using Mongoose.
-- Building RESTful API endpoints for movies, theatres, shows, bookings, users, and reviews.
-- Implementing user authentication using JSON Web Tokens (JWT) and password hashing with Bcrypt.
-- Building a responsive, interactive user interface in React using hooks and Context API.
-- Creating a seat reservation timer that temporarily holds selected seats during booking to prevent booking conflicts.
-- Practicing clean code organization, Git version control, and component-based design.
+- Developing REST API endpoints for movies, theatres, shows, bookings, users, and reviews.
+- Implementing secure user authentication using JSON Web Tokens (JWT) and password hashing with Bcrypt.
+- Building a responsive user interface with React Hooks and the Context API.
+- Creating a seat reservation timer that temporarily holds selected seats during checkout to prevent double-booking.
+- Practicing clean project organization, Git version control, and building reusable React components.
 
 ---
 
 ## Features
 
 ### Guest (Unregistered Visitors)
-- **Landing Page**: Welcome page introducing the application with quick links to explore or log in.
+- **Landing Page**: Welcome page introducing the application with quick links to explore movies or log in.
 - **Browse Movies**: View movies currently showing in theatres, advance booking titles, and upcoming releases.
-- **Search Movies**: Real-time search bar with suggestions to quickly find movies by title, actor, or genre.
-- **Movie Filters & Sorting**: Filter movies by genre, language, format (2D, 3D, IMAX), and rating, or sort by release date and popularity.
-- **Movie Details**: View synopsis, duration, certification, cast and crew list, audience ratings, and YouTube trailers.
+- **Search Movies**: Search movies in real time with suggestions matching title, actor, or genre.
+- **Filter and Sort Movies**: Filter movies by genre, language, format (2D, 3D, IMAX), and rating, or sort by release date and popularity.
+- **View Movie Details**: Read the synopsis, check duration and certification, view the cast and crew list, see ratings, and watch trailers.
 - **Community Reviews**: Read reviews and star ratings submitted by other users.
-- **Explore Theatres**: Browse local cinema halls and multiplexes with details on available amenities and formats.
-- **User Registration & Login**: Create a new account or sign in with existing credentials.
+- **Explore Theatres**: Browse local theatres along with details on available amenities, screen formats, and Google Maps directions.
+- **Register and Login**: Create a new account or log in with existing credentials.
 
 ### Registered User
-- **Choose Location**: Select your city when booking to view nearby theatres and available shows.
-- **Seat Selection**: Interactive seat grid divided into three categories:
-  - Balcony (Gold Class)
-  - Middle (Executive Class)
-  - Lower (Classic Class)
-- **Seat Reservation Timer**: When seats are selected, they are temporarily held for 10 minutes so other users cannot pick them while payment is being completed.
-- **Payment**: Select a payment method (UPI, Credit/Debit Card, Net Banking) and complete the booking through a banking authorization screen.
-- **Digital Admission Ticket**: Immediate booking confirmation showing booking ID, movie poster, show timing, auditorium screen, seat numbers, and a scannable QR code.
-- **Print & Download Pass**: Print or save tickets directly using the browser print function.
-- **My Bookings**: View current and past booking history.
-- **Self-Service Cancellation**: Cancel an entire booking or cancel specific seats with refund calculation and automatic seat release back to the cinema.
-- **User Profile**: Update name and phone number, change account password, and manage refund payment details.
-- **Wishlist / Favorites**: Save favorite movies to personal wishlist with one click.
+- **Choose Location**: Select your city while booking to find nearby theatres and available shows.
+- **Seat Selection**: Select seats from Balcony, Middle, or Lower seating sections.
+- **Seat Reservation Timer**: Hold selected seats for 10 minutes so other users cannot pick them while payment is being completed.
+- **Payment**: Select a payment method (UPI, Card, Net Banking) and complete checkout through a simulated banking authorization screen.
+- **Digital Admission Ticket**: Receive an instant booking confirmation displaying booking ID, movie poster, show timing, screen, seat numbers, and a scannable QR code.
+- **Print and Download Ticket**: Print or save tickets directly using the browser print function.
+- **My Bookings**: View active and past booking history.
+- **Self-Service Cancellation**: Cancel an entire booking or cancel specific seats with automatic refund calculation and seat release back to the theatre.
+- **User Profile**: Update profile details, change account password, and manage refund payment accounts.
+- **Wishlist / Favorites**: Save favorite movies to your personal wishlist with one click.
 - **Submit Reviews**: Rate watched movies on a 1 to 5 star scale and write review feedback.
 - **Logout**: Securely clear the user session.
 
 ### Administrator
-- **Admin Dashboard**: Overview of key statistics including total revenue, confirmed bookings, active shows, registered users, and total movies.
+- **Admin Dashboard**: View key statistics including total revenue, confirmed bookings, active shows, registered users, and total movies.
 - **Movie Management**: Add and edit movies using TMDB movie data, update details (cast, director, status, trailer ID), or delete movies from the catalog.
-- **Show Scheduling**: Schedule new movie screenings with automated time-slot checks to prevent overlapping shows on the same screen.
+- **Show Scheduling**: Schedule movie screenings with automated time-slot checks to prevent overlapping shows on the same screen.
 - **Interactive Seat Preview**: View real-time booked and available seats for any scheduled show directly from the admin panel.
-- **Theatre Management**: Add new multiplexes, configure screen names, seat counts per category, and base pricing.
-- **Booking Management**: View all customer reservations across all theatres and verify turnstile check-ins.
+- **Theatre Management**: Add new theatres, configure screen names, seat counts per category, and base pricing.
+- **Booking Management**: View customer reservations across all theatres and verify turnstile check-ins.
 - **User Management**: View registered user accounts and manage access permissions.
-- **Operational Reports**: View revenue breakdowns by movie and cinema chain, and export show schedule data as CSV files.
+- **Operational Reports**: View revenue breakdowns by movie and theatre, and export show schedule data as CSV files.
 
 ---
 
 ## Technologies Used
 
 ### Frontend
-- **React**: Frontend UI library using functional components and hooks.
+- **React**: UI library using functional components and hooks.
 - **Vite**: Frontend build tool and local development server.
-- **React Router DOM**: Client-side routing with page navigation and protected route guards.
-- **Bootstrap & Tailwind CSS**: Responsive grid layouts, form styles, and UI utility classes.
-- **FontAwesome**: Icons for cinema amenities, seats, stars, and navigation controls.
-- **Axios**: HTTP client for communicating with the backend REST API.
+- **React Router DOM**: Client-side routing with navigation and protected route guards.
+- **Bootstrap & Tailwind CSS**: Responsive grid layouts, form styles, and utility classes.
+- **FontAwesome**: Icons for theatre amenities, seats, star ratings, and controls.
+- **Axios**: HTTP client for communicating with backend REST API endpoints.
 - **React Hot Toast**: Toast notifications for user feedback (success, errors, warnings).
 
 ### Backend
-- **Node.js**: JavaScript runtime environment for the backend server.
-- **Express.js**: Web application framework for building REST API endpoints and middleware.
-- **Mongoose**: Object Data Modeling (ODM) library for MongoDB.
+- **Node.js**: JavaScript runtime environment for running the server.
+- **Express.js**: Web framework for building REST API routes and middleware.
+- **Mongoose**: Library for managing MongoDB data using schemas and models.
 - **JSON Web Tokens (jsonwebtoken)**: Token generation for user sessions.
-- **Bcryptjs**: Password hashing for credential security.
-- **Helmet**: Middleware to secure Express apps by setting HTTP headers.
-- **Express Rate Limit**: Basic rate limiting to protect authentication endpoints.
+- **Bcryptjs**: Password hashing algorithm for user credential security.
+- **Helmet**: Middleware for setting security HTTP headers.
+- **Express Rate Limit**: Basic rate limiting to protect authentication routes.
 - **Cookie Parser**: Middleware to parse cookies for session handling.
 
 ### Database
 - **MongoDB Atlas**: Cloud-hosted NoSQL document database.
 
 ### External APIs & Media
-- **The Movie Database (TMDB) API**: Used to fetch movie descriptions, release dates, genres, and poster artwork.
-- **QR Server API**: Generates dynamic QR code images for digital ticket verification.
+- **The Movie Database (TMDB) API**: Service used to fetch movie descriptions, release dates, genres, and poster artwork.
+- **QR Server API**: External service that generates dynamic QR code images for digital ticket verification.
 - **Local Movie Posters**: Local movie poster repository stored in `client/public/posters/` for faster loading and offline fallback.
 
 ---
@@ -171,7 +168,7 @@ cd screenly
    JWT_SECRET=your_jwt_secret
    ```
 
-5. (Optional but recommended) Seed the database with initial cinemas, movies, and showtimes:
+5. (Optional but recommended) Seed the database with initial theatres, movies, and showtimes:
    ```bash
    npm run seed
    ```
@@ -181,7 +178,7 @@ cd screenly
    npm start
    ```
 
-   *(Note: You can also run `npm run dev` in the server folder if you prefer nodemon for auto-reloading.)*
+   *(Note: You can also run `npm run dev` in the server folder if you prefer nodemon for auto-reloading during development.)*
 
    The server will start at `http://localhost:5000`.
 
@@ -217,16 +214,16 @@ The backend requires the following 4 environment variables in `server/.env`:
 
 | Variable | Description | Example |
 | :--- | :--- | :--- |
-| `PORT` | Port number on which Express runs | `5000` |
-| `MONGO_URI` | MongoDB connection string | `your_mongodb_connection_string` |
-| `TMDB_API_KEY` | The Movie Database API key | `your_tmdb_api_key` |
+| `PORT` | Port number on which the Express server runs | `5000` |
+| `MONGO_URI` | MongoDB Atlas database connection string | `your_mongodb_connection_string` |
+| `TMDB_API_KEY` | Free API key from The Movie Database | `your_tmdb_api_key` |
 | `JWT_SECRET` | Secret string used to sign authentication tokens | `your_jwt_secret` |
 
 ---
 
 ## Demo Credentials
 
-If you ran `npm run seed` in the backend, the following demo accounts are available:
+If you ran `npm run seed` in the backend, the following demo accounts are available for testing:
 
 ### Administrator
 - **Email**: `admin@imovies.com`
@@ -236,7 +233,7 @@ If you ran `npm run seed` in the backend, the following demo accounts are availa
 - **Email**: `user@imovies.com`
 - **Password**: `user123`
 
-*Note: These are demo accounts created for testing and evaluation purposes. You can also create a new account using the Sign Up page.*
+*Note: These are demo accounts created for testing and academic evaluation. You can also create a new account using the Register page.*
 
 ---
 
@@ -302,23 +299,23 @@ Logout
 
 ## Screens Included
 
-- **Landing Page** (`/`): Introduces the platform to visitors.
-- **Home** (`/home`): Movie carousel, trending films, and category discovery.
-- **Explore** (`/search`): Movie search and filtering interface.
-- **Movie Details** (`/movies/:id`): Synopsis, cast, ratings, reviews, and trailer popup.
-- **Seat Selection** (`/seat-selection/:showId`): Tiered cinema layout (Balcony, Middle, Lower).
-- **Payment** (`/payment/:bookingId`): Order breakdown and payment method selection.
-- **Booking Confirmation** (`/booking-success/:bookingId`): Verified admission pass with dynamic QR code.
-- **My Bookings** (`/bookings`): Ticket history and seat cancellation options.
-- **Login** (`/login`): User login with automatic role detection.
-- **Register** (`/register`): User account registration form.
-- **User Profile** (`/profile`): User account details, password change, and saved favorites.
-- **Admin Dashboard** (`/admin`): Key operational stats and recent transactions.
-- **Manage Movies** (`/admin/movies`): Movie catalog operations and updates.
-- **Manage Shows** (`/admin/shows`): Screening scheduler and real-time seat layout preview.
-- **Manage Theatres** (`/admin/theatres`): Multiplex facility and screen capacity manager.
-- **Manage Bookings** (`/admin/bookings`): Reservation list and check-in verifier.
-- **Manage Users** (`/admin/users`): Customer account list.
+- **Landing Page** (`/`): Introduces the platform to visitors with links to browse or log in.
+- **Home** (`/home`): Movie carousel, trending movies, and category discovery.
+- **Explore** (`/search`): Real-time movie search and multi-tag filtering interface.
+- **Movie Details** (`/movies/:id`): Synopsis, cast, ratings, user reviews, and trailer player.
+- **Seat Selection** (`/seat-selection/:showId`): Cinema seat layout with Balcony, Middle, and Lower sections.
+- **Payment** (`/payment/:bookingId`): Order summary and simulated payment method selection.
+- **Booking Confirmation** (`/booking-success/:bookingId`): Verified admission pass with a dynamic QR code.
+- **My Bookings** (`/bookings`): Ticket history, digital pass view, and seat cancellation options.
+- **Login** (`/login`): User login form with automatic role detection.
+- **Register** (`/register`): User account registration form with input validation.
+- **User Profile** (`/profile`): User account details, password update, and saved favorites.
+- **Admin Dashboard** (`/admin`): Key operational statistics, revenue summary, and recent bookings.
+- **Manage Movies** (`/admin/movies`): Movie catalog operations, poster previews, and updates.
+- **Manage Shows** (`/admin/shows`): Screening scheduler with seat layout preview and CSV export.
+- **Manage Theatres** (`/admin/theatres`): Theatre facility and screen capacity manager.
+- **Manage Bookings** (`/admin/bookings`): Customer reservation list and turnstile check-in verifier.
+- **Manage Users** (`/admin/users`): Registered customer accounts list.
 
 ---
 
@@ -326,12 +323,12 @@ Logout
 
 Building this project helped me learn practical web development skills:
 
-- **React**: Building dynamic, component-driven user interfaces.
-- **React Hooks**: Using `useState`, `useEffect`, `useMemo`, and custom hooks for component lifecycle and state management.
+- **React**: Building dynamic, reusable user interface components.
+- **React Hooks**: Using React Hooks to manage component state and lifecycle.
 - **Context API**: Managing user authentication and city selection state across components without prop drilling.
 - **REST APIs**: Designing and organizing clean HTTP routes for movies, theatres, shows, and bookings.
 - **Express.js**: Setting up backend routing, custom middleware, and error handling.
-- **MongoDB**: Creating data schemas with Mongoose and connecting an Express backend to a cloud MongoDB Atlas database.
+- **MongoDB & Mongoose**: Managing database records, relationships, and queries using Mongoose.
 - **JWT Authentication**: Setting up secure user registration and login with token-based session checks.
 - **CRUD Operations**: Building complete Create, Read, Update, and Delete operations for movies, theatres, shows, and reviews.
 - **Git & GitHub**: Managing project version control, branching, committing changes, and organizing project files.
