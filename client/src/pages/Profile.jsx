@@ -20,9 +20,89 @@ const AVATAR_PRESETS = [
 ];
 
 export default function Profile() {
-  const { user } = useAuth();
+  const { user, updateUser } = useAuth();
   const navigate = useNavigate();
   const location = useLocation();
+
+  // Edit Name State
+  const [isEditingName, setIsEditingName] = useState(false);
+  const [nameInput, setNameInput] = useState(user?.name || "");
+  const [nameError, setNameError] = useState("");
+  const [nameLoading, setNameLoading] = useState(false);
+
+  useEffect(() => {
+    if (!isEditingName && user?.name) {
+      setNameInput(user.name);
+    }
+  }, [user?.name, isEditingName]);
+
+  const validateName = (name) => {
+    if (!name || typeof name !== "string") {
+      return "Name is required.";
+    }
+    const trimmed = name.trim();
+    if (!trimmed) {
+      return "Name cannot be empty or contain only spaces.";
+    }
+    if (trimmed.length < 2) {
+      return "Name must be at least 2 characters long.";
+    }
+    if (trimmed.length > 50) {
+      return "Name cannot exceed 50 characters.";
+    }
+    const nameRegex = /^[a-zA-Z\s'-]+$/;
+    if (!nameRegex.test(trimmed)) {
+      return "Name can only contain alphabetic letters, spaces, hyphens (-), and apostrophes (').";
+    }
+    return null;
+  };
+
+  const handleStartEditName = () => {
+    setNameInput(user?.name || "");
+    setNameError("");
+    setIsEditingName(true);
+  };
+
+  const handleCancelEditName = () => {
+    setNameInput(user?.name || "");
+    setNameError("");
+    setIsEditingName(false);
+  };
+
+  const handleSaveName = async (e) => {
+    if (e) e.preventDefault();
+    const errorMsg = validateName(nameInput);
+    if (errorMsg) {
+      setNameError(errorMsg);
+      toast.error(errorMsg);
+      return;
+    }
+
+    const trimmedName = nameInput.trim();
+    if (trimmedName === user?.name) {
+      setIsEditingName(false);
+      setNameError("");
+      return;
+    }
+
+    try {
+      setNameLoading(true);
+      setNameError("");
+      const res = await api.put("/api/users/profile", { name: trimmedName });
+      const updatedUser = res.data?.user || res.data;
+      if (updatedUser) {
+        updateUser(updatedUser);
+      }
+      setIsEditingName(false);
+      toast.success("Profile name updated successfully!");
+    } catch (err) {
+      const serverMessage = err.response?.data?.message || "Failed to update profile name.";
+      setNameError(serverMessage);
+      toast.error(serverMessage);
+    } finally {
+      setNameLoading(false);
+    }
+  };
 
   // Tabs: 'bookings' | 'favorites' | 'recentlyViewed' | 'settings' | 'payouts'
   const [activeTab, setActiveTab] = useState(() => {
@@ -212,13 +292,73 @@ export default function Profile() {
                 {user?.name ? user.name.charAt(0).toUpperCase() : "U"}
               </div>
             )}
-            <div>
-              <div className="d-flex align-items-center gap-2">
-                <h3 className="text-white fw-bold mb-0">{user?.name || "Cinema Enthusiast"}</h3>
-                <span className="badge bg-danger small">Verified Member</span>
+            {isEditingName ? (
+              <div className="flex-grow-1" style={{ maxWidth: "420px" }}>
+                <form onSubmit={handleSaveName}>
+                  <div className="d-flex align-items-center gap-2 mb-1">
+                    <input
+                      type="text"
+                      className={`form-control form-control-sm cinema-input text-white ${nameError ? "border-danger" : ""}`}
+                      value={nameInput}
+                      onChange={(e) => {
+                        setNameInput(e.target.value);
+                        if (nameError) setNameError("");
+                      }}
+                      placeholder="Enter full name"
+                      maxLength={50}
+                      autoFocus
+                      disabled={nameLoading}
+                    />
+                    <button
+                      type="submit"
+                      disabled={nameLoading}
+                      className="btn btn-sm btn-cinema px-3 text-nowrap"
+                    >
+                      {nameLoading ? (
+                        <span className="spinner-border spinner-border-sm"></span>
+                      ) : (
+                        <>
+                          <i className="fa-solid fa-check me-1"></i> Save
+                        </>
+                      )}
+                    </button>
+                    <button
+                      type="button"
+                      onClick={handleCancelEditName}
+                      disabled={nameLoading}
+                      className="btn btn-sm btn-secondary-cinema px-2 text-nowrap"
+                    >
+                      <i className="fa-solid fa-xmark me-1"></i> Cancel
+                    </button>
+                  </div>
+                  {nameError && (
+                    <div className="text-danger small fw-semibold mb-1" style={{ fontSize: "0.78rem" }}>
+                      {nameError}
+                    </div>
+                  )}
+                  <p className="text-secondary small mb-0">{user?.email || "customer@screenly.com"}</p>
+                </form>
               </div>
-              <p className="text-secondary small mb-0">{user?.email || "customer@screenly.com"}</p>
-            </div>
+            ) : (
+              <div>
+                <div className="d-flex align-items-center gap-2 flex-wrap">
+                  <h3 className="text-white fw-bold mb-0">{user?.name || "Cinema Enthusiast"}</h3>
+                  <span className="badge bg-danger small">
+                    {user?.role === "admin" ? "Administrator" : "Verified Member"}
+                  </span>
+                  <button
+                    type="button"
+                    onClick={handleStartEditName}
+                    className="btn btn-sm btn-secondary-cinema ms-1 py-1 px-2"
+                    title="Edit Name"
+                    style={{ fontSize: "0.8rem" }}
+                  >
+                    <i className="fa-solid fa-pen-to-square me-1"></i> Edit Name
+                  </button>
+                </div>
+                <p className="text-secondary small mb-0">{user?.email || "customer@screenly.com"}</p>
+              </div>
+            )}
           </div>
 
           <div className="d-flex gap-3 text-center">
@@ -413,6 +553,143 @@ export default function Profile() {
       {/* ================= TAB 4: ACCOUNT SETTINGS ================= */}
       {activeTab === "settings" && (
         <div className="row g-4">
+          {/* Personal Profile Details (Editable Name & Read-only Account Info) */}
+          <div className="col-12">
+            <div className="glass-panel p-4">
+              <div className="d-flex justify-content-between align-items-center mb-3">
+                <div>
+                  <h5 className="text-white fw-bold mb-1">
+                    <i className="fa-solid fa-id-card text-danger me-2"></i> Personal Details
+                  </h5>
+                  <p className="text-secondary small mb-0">Manage your Screenly account identity</p>
+                </div>
+                {!isEditingName && (
+                  <button
+                    type="button"
+                    onClick={handleStartEditName}
+                    className="btn btn-sm btn-secondary-cinema"
+                  >
+                    <i className="fa-solid fa-pen-to-square me-1"></i> Edit Name
+                  </button>
+                )}
+              </div>
+
+              {isEditingName && (
+                <form onSubmit={handleSaveName} className="mb-4 p-3 rounded-3" style={{ background: "rgba(255,255,255,0.02)", border: "1px solid rgba(229,9,20,0.3)" }}>
+                  <div className="row g-3 align-items-end">
+                    <div className="col-12 col-md-7">
+                      <label className="text-secondary small fw-bold mb-1 d-block">
+                        Full Name <span className="text-danger">*</span>
+                      </label>
+                      <input
+                        type="text"
+                        className={`form-control cinema-input text-white ${nameError ? "border-danger" : ""}`}
+                        value={nameInput}
+                        onChange={(e) => {
+                          setNameInput(e.target.value);
+                          if (nameError) setNameError("");
+                        }}
+                        placeholder="Enter your full name"
+                        maxLength={50}
+                        autoFocus
+                        disabled={nameLoading}
+                      />
+                      {nameError ? (
+                        <div className="text-danger small mt-1 fw-semibold">{nameError}</div>
+                      ) : (
+                        <div className="text-secondary small mt-1" style={{ fontSize: "0.75rem" }}>
+                          2 to 50 characters. Letters, spaces, hyphens (-), and apostrophes (') allowed.
+                        </div>
+                      )}
+                    </div>
+                    <div className="col-12 col-md-5 d-flex gap-2">
+                      <button
+                        type="submit"
+                        disabled={nameLoading}
+                        className="btn btn-cinema px-4 py-2"
+                      >
+                        {nameLoading ? (
+                          <>
+                            <span className="spinner-border spinner-border-sm me-2"></span> Saving...
+                          </>
+                        ) : (
+                          <>
+                            <i className="fa-solid fa-check me-1"></i> Save Changes
+                          </>
+                        )}
+                      </button>
+                      <button
+                        type="button"
+                        onClick={handleCancelEditName}
+                        disabled={nameLoading}
+                        className="btn btn-secondary-cinema px-3 py-2"
+                      >
+                        <i className="fa-solid fa-xmark me-1"></i> Cancel
+                      </button>
+                    </div>
+                  </div>
+                </form>
+              )}
+
+              <div className="row g-3">
+                <div className="col-12 col-md-6">
+                  <label className="text-secondary small fw-bold mb-1 d-block">Full Name</label>
+                  <div className="p-2 rounded-2 d-flex align-items-center justify-content-between" style={{ background: "rgba(255,255,255,0.03)", border: "1px solid rgba(255,255,255,0.08)" }}>
+                    <span className="text-white fw-semibold">{user?.name || "Cinema Enthusiast"}</span>
+                    {!isEditingName && (
+                      <button
+                        type="button"
+                        onClick={handleStartEditName}
+                        className="btn btn-link btn-sm text-danger p-0 text-decoration-none"
+                        style={{ fontSize: "0.8rem" }}
+                      >
+                        Change
+                      </button>
+                    )}
+                  </div>
+                </div>
+
+                <div className="col-12 col-md-6">
+                  <label className="text-secondary small fw-bold mb-1 d-block">
+                    Email Address <span className="badge bg-secondary ms-1 py-0 px-1" style={{ fontSize: "0.65rem" }}>Read-Only</span>
+                  </label>
+                  <div className="p-2 rounded-2 d-flex align-items-center justify-content-between text-secondary" style={{ background: "rgba(255,255,255,0.02)", border: "1px solid rgba(255,255,255,0.06)" }}>
+                    <span>{user?.email || "customer@screenly.com"}</span>
+                    <i className="fa-solid fa-lock text-secondary small" title="Email address cannot be changed"></i>
+                  </div>
+                </div>
+
+                <div className="col-12 col-md-4">
+                  <label className="text-secondary small fw-bold mb-1 d-block">
+                    Account Role <span className="badge bg-secondary ms-1 py-0 px-1" style={{ fontSize: "0.65rem" }}>Read-Only</span>
+                  </label>
+                  <div className="p-2 rounded-2 d-flex align-items-center gap-2 text-secondary" style={{ background: "rgba(255,255,255,0.02)", border: "1px solid rgba(255,255,255,0.06)" }}>
+                    <span className={`badge ${user?.role === "admin" ? "bg-danger" : "bg-primary"}`}>
+                      {user?.role === "admin" ? "Administrator" : "Standard User"}
+                    </span>
+                  </div>
+                </div>
+
+                <div className="col-12 col-md-4">
+                  <label className="text-secondary small fw-bold mb-1 d-block">
+                    User Identifier <span className="badge bg-secondary ms-1 py-0 px-1" style={{ fontSize: "0.65rem" }}>Read-Only</span>
+                  </label>
+                  <div className="p-2 rounded-2 text-secondary font-monospace small text-truncate" style={{ background: "rgba(255,255,255,0.02)", border: "1px solid rgba(255,255,255,0.06)" }}>
+                    {user?._id || user?.id || "N/A"}
+                  </div>
+                </div>
+
+                <div className="col-12 col-md-4">
+                  <label className="text-secondary small fw-bold mb-1 d-block">
+                    Member Since <span className="badge bg-secondary ms-1 py-0 px-1" style={{ fontSize: "0.65rem" }}>Read-Only</span>
+                  </label>
+                  <div className="p-2 rounded-2 text-secondary small" style={{ background: "rgba(255,255,255,0.02)", border: "1px solid rgba(255,255,255,0.06)" }}>
+                    {user?.createdAt ? new Date(user.createdAt).toLocaleDateString(undefined, { year: 'numeric', month: 'short', day: 'numeric' }) : "Verified Member"}
+                  </div>
+                </div>
+              </div>
+            </div>
+          </div>
           {/* Profile Picture Selector */}
           <div className="col-12 col-md-6">
             <div className="glass-panel p-4 h-100">

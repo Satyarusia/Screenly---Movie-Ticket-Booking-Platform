@@ -24,16 +24,49 @@ const updateProfile = async (req, res) => {
     const user = await User.findById(req.user._id);
     if (!user) return res.status(404).json({ message: "User not found" });
 
-    if (name) user.name = name;
-    if (phone !== undefined) user.phone = phone;
+    if (name !== undefined) {
+      if (typeof name !== "string") {
+        return res.status(400).json({ message: "Name must be a valid text string." });
+      }
+      const trimmedName = name.trim();
+      if (!trimmedName) {
+        return res.status(400).json({ message: "Name cannot be empty or contain only spaces." });
+      }
+      if (trimmedName.length < 2) {
+        return res.status(400).json({ message: "Name must be at least 2 characters long." });
+      }
+      if (trimmedName.length > 50) {
+        return res.status(400).json({ message: "Name cannot exceed 50 characters." });
+      }
+      const nameRegex = /^[a-zA-Z\s'-]+$/;
+      if (!nameRegex.test(trimmedName)) {
+        return res.status(400).json({
+          message: "Name can only contain alphabetic letters, spaces, hyphens (-), and apostrophes (').",
+        });
+      }
+      user.name = trimmedName;
+    }
+
+    if (phone !== undefined) {
+      user.phone = typeof phone === "string" ? phone.trim() : phone;
+    }
 
     const updatedUser = await user.save();
-    res.json({
+    const safeUserData = {
       _id: updatedUser._id,
+      id: updatedUser._id,
       name: updatedUser.name,
       email: updatedUser.email,
       phone: updatedUser.phone,
       role: updatedUser.role,
+      createdAt: updatedUser.createdAt,
+    };
+
+    res.json({
+      success: true,
+      message: "Profile updated successfully",
+      ...safeUserData,
+      user: safeUserData,
     });
   } catch (error) {
     res.status(500).json({ message: error.message });

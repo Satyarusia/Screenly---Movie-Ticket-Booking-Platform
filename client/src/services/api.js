@@ -63,4 +63,10 @@ export const bookingsApi = {
   cancelSeats: (id, cancelData) => api.put(`/api/bookings/${id}/cancel-seats`, cancelData),
 };
 
+export const userApi = {
+  getProfile: () => api.get("/api/users/profile"),
+  updateProfile: (profileData) => api.put("/api/users/profile", profileData),
+  changePassword: (passwordData) => api.put("/api/users/change-password", passwordData),
+};
+
 export default api;
