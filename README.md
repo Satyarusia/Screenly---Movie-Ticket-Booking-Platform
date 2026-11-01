@@ -1,4 +1,4 @@
-# Screenly - Movie Ticket Booking Platform
+# Screenly - MERN Movie Ticket Booking System
 
 A full-stack movie ticket booking web application built using the MERN stack (MongoDB, Express.js, React, Node.js).
 
@@ -59,13 +59,13 @@ The key learning goals for this project were:
 
 ### Administrator
 - **Admin Dashboard**: Overview of key statistics including total revenue, confirmed bookings, active shows, registered users, and total movies.
-- **Movie Management**: Add new movies with TMDB autofill, edit movie details (cast, director, status, trailer ID), or delete movies from the catalog.
+- **Movie Management**: Add and edit movies using TMDB movie data, update details (cast, director, status, trailer ID), or delete movies from the catalog.
 - **Show Scheduling**: Schedule new movie screenings with automated time-slot checks to prevent overlapping shows on the same screen.
 - **Interactive Seat Preview**: View real-time booked and available seats for any scheduled show directly from the admin panel.
 - **Theatre Management**: Add new multiplexes, configure screen names, seat counts per category, and base pricing.
 - **Booking Management**: View all customer reservations across all theatres and verify turnstile check-ins.
 - **User Management**: View registered user accounts and manage access permissions.
-- **Operational Reports**: View revenue breakdowns by movie and cinema chain, and export booking reports as CSV files.
+- **Operational Reports**: View revenue breakdowns by movie and cinema chain, and export show schedule data as CSV files.
 
 ---
 
@@ -166,9 +166,9 @@ cd screenly
 4. Open `server/.env` in your text editor and fill in your values:
    ```env
    PORT=5000
-   MONGO_URI=mongodb+srv://<username>:<password>@cluster0.mongodb.net/screenly?retryWrites=true&w=majority
-   TMDB_API_KEY=your_tmdb_api_key_here
-   JWT_SECRET=your_secret_key_for_jwt_signing
+   MONGO_URI=your_mongodb_connection_string
+   TMDB_API_KEY=your_tmdb_api_key
+   JWT_SECRET=your_jwt_secret
    ```
 
 5. (Optional but recommended) Seed the database with initial cinemas, movies, and showtimes:
@@ -180,6 +180,8 @@ cd screenly
    ```bash
    npm start
    ```
+
+   *(Note: You can also run `npm run dev` in the server folder if you prefer nodemon for auto-reloading.)*
 
    The server will start at `http://localhost:5000`.
 
@@ -216,9 +218,9 @@ The backend requires the following 4 environment variables in `server/.env`:
 | Variable | Description | Example |
 | :--- | :--- | :--- |
 | `PORT` | Port number on which Express runs | `5000` |
-| `MONGO_URI` | MongoDB Atlas connection string | `mongodb+srv://user:pass@cluster.mongodb.net/screenly` |
-| `TMDB_API_KEY` | Free API key from The Movie Database | `4320c6bb6bced39b12edc2b10de42798` |
-| `JWT_SECRET` | Secret string used to sign authentication tokens | `my_jwt_super_secret_key` |
+| `MONGO_URI` | MongoDB connection string | `your_mongodb_connection_string` |
+| `TMDB_API_KEY` | The Movie Database API key | `your_tmdb_api_key` |
+| `JWT_SECRET` | Secret string used to sign authentication tokens | `your_jwt_secret` |
 
 ---
 
@@ -254,7 +256,7 @@ Browse Movies
 Movie Details
      │
      ▼
-Click Book Tickets
+Book Tickets
      │
      ▼
 Select Location
@@ -272,13 +274,10 @@ Choose Seats
 Payment
      │
      ▼
-Booking Success
+Booking Confirmation
      │
      ▼
 My Bookings
-     │
-     ▼
-Logout
 ```
 
 ### Administrator Flow
@@ -289,7 +288,7 @@ Login with Admin Credentials
 Admin Dashboard
      │
      ├── Manage Shows (Add and edit showtimes with time-slot checks)
-     ├── Manage Movies (Add and edit movies with TMDB autofill)
+     ├── Manage Movies (Add and edit movies using TMDB movie data)
      ├── Manage Theatres (Configure screens and seating capacity)
      ├── Manage Bookings (View customer orders and verify admissions)
      ├── Manage Users (View registered customer accounts)
@@ -305,28 +304,21 @@ Logout
 
 - **Landing Page** (`/`): Introduces the platform to visitors.
 - **Home** (`/home`): Movie carousel, trending films, and category discovery.
-- **Explore / Search** (`/search`): Real-time search with filter options.
-- **Movies Directory** (`/movies`): Full movie catalog with status, genre, and format filters.
+- **Explore** (`/search`): Movie search and filtering interface.
 - **Movie Details** (`/movies/:id`): Synopsis, cast, ratings, reviews, and trailer popup.
-- **Shows** (`/shows`): Cinema schedules grouped by theatre and format.
-- **Theatres** (`/theatres`): List of cinemas with facilities, formats, and Google Maps links.
 - **Seat Selection** (`/seat-selection/:showId`): Tiered cinema layout (Balcony, Middle, Lower).
 - **Payment** (`/payment/:bookingId`): Order breakdown and payment method selection.
-- **Booking Success** (`/booking-success/:bookingId`): Booking confirmation with dynamic QR code.
+- **Booking Confirmation** (`/booking-success/:bookingId`): Verified admission pass with dynamic QR code.
 - **My Bookings** (`/bookings`): Ticket history and seat cancellation options.
-- **Profile** (`/profile`): User account details, password change, and saved favorites.
 - **Login** (`/login`): User login with automatic role detection.
 - **Register** (`/register`): User account registration form.
-- **About** (`/about`): Project background and objectives.
-- **FAQ** (`/faq`): Frequently asked questions on booking and cancellation.
+- **User Profile** (`/profile`): User account details, password change, and saved favorites.
 - **Admin Dashboard** (`/admin`): Key operational stats and recent transactions.
+- **Manage Movies** (`/admin/movies`): Movie catalog operations and updates.
 - **Manage Shows** (`/admin/shows`): Screening scheduler and real-time seat layout preview.
-- **Manage Movies** (`/admin/movies`): Movie catalog operations and TMDB sync.
 - **Manage Theatres** (`/admin/theatres`): Multiplex facility and screen capacity manager.
 - **Manage Bookings** (`/admin/bookings`): Reservation list and check-in verifier.
 - **Manage Users** (`/admin/users`): Customer account list.
-- **Admin Reports** (`/admin/reports`): Revenue breakdown and CSV export.
-- **Admin Settings** (`/admin/settings`): Platform convenience fee and tax settings.
 
 ---
 
@@ -334,16 +326,17 @@ Logout
 
 Building this project helped me learn practical web development skills:
 
-- **React & React Hooks**: Working with `useState`, `useEffect`, `useMemo`, and custom hooks to build interactive UI components.
-- **Context API**: Managing user authentication and city selection state across the application without prop drilling.
-- **REST APIs**: Designing and building API routes in Express.js for handling movies, shows, theatres, and bookings.
-- **JWT Authentication**: Setting up secure user login and registration with token verification and protected routes.
-- **MongoDB & Express.js**: Creating data schemas with Mongoose and connecting an Express backend to a cloud MongoDB Atlas database.
+- **React**: Building dynamic, component-driven user interfaces.
+- **React Hooks**: Using `useState`, `useEffect`, `useMemo`, and custom hooks for component lifecycle and state management.
+- **Context API**: Managing user authentication and city selection state across components without prop drilling.
+- **REST APIs**: Designing and organizing clean HTTP routes for movies, theatres, shows, and bookings.
+- **Express.js**: Setting up backend routing, custom middleware, and error handling.
+- **MongoDB**: Creating data schemas with Mongoose and connecting an Express backend to a cloud MongoDB Atlas database.
+- **JWT Authentication**: Setting up secure user registration and login with token-based session checks.
 - **CRUD Operations**: Building complete Create, Read, Update, and Delete operations for movies, theatres, shows, and reviews.
-- **API Integration**: Connecting frontend components to backend endpoints using Axios and integrating external APIs like TMDB.
-- **Git & GitHub**: Managing code versions, branching, committing changes, and organizing project files.
-- **Responsive Design**: Using Bootstrap and Tailwind CSS to build layouts that adapt cleanly across different screen sizes.
-- **Debugging**: Inspecting network requests, resolving frontend state bugs, and handling backend error responses.
+- **Git & GitHub**: Managing project version control, branching, committing changes, and organizing project files.
+- **Responsive Design**: Using Bootstrap and Tailwind CSS to ensure layouts work cleanly across different screen sizes.
+- **Debugging**: Inspecting network requests, troubleshooting frontend state issues, and handling backend errors.
 
 ---
 
