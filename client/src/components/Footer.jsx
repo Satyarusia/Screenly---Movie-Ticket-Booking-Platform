@@ -82,7 +82,7 @@ const Footer = () => {
 
         <div className="d-flex flex-column flex-md-row justify-content-between align-items-center gap-3 small text-secondary">
           <div>
-            &copy; {new Date().getFullYear()} Screenly Cinema Network. All rights reserved.
+            Screenly Cinema Network
           </div>
           <div className="d-flex gap-4">
             <span className="text-secondary">Instant Confirmation</span>
