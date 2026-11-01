@@ -20,21 +20,18 @@ export default function ManageMovies() {
   const [error, setError] = useState("");
   const [successMsg, setSuccessMsg] = useState("");
 
-  // Search & Pagination for existing cinema catalog
+  // Search & Pagination for existing cinema catalog table at bottom
   const [search, setSearch] = useState("");
   const [currentPage, setCurrentPage] = useState(1);
   const itemsPerPage = 8;
 
-  // Template Search / Autofill Selection State
-  const [catalogSearch, setCatalogSearch] = useState("");
-  const [catalogFilter, setCatalogFilter] = useState("all"); // 'all' | 'database' | 'tmdb'
-  const [showCatalogPicker, setShowCatalogPicker] = useState(true);
-
-  // Poster Selection Modal State
-  const [posterModalOpen, setPosterModalOpen] = useState(false);
-  const [availablePosters, setAvailablePosters] = useState([]);
-  const [loadingPosters, setLoadingPosters] = useState(false);
-  const [posterSearch, setPosterSearch] = useState("");
+  // Movie & Poster Selection Modal State
+  const [movieModalOpen, setMovieModalOpen] = useState(false);
+  const [modalSearch, setModalSearch] = useState("");
+  const [modalLanguage, setModalLanguage] = useState("All");
+  const [modalStatus, setModalStatus] = useState("All");
+  const [modalPage, setModalPage] = useState(1);
+  const modalPageSize = 12;
 
   // Confirmation Modal State for Deletion
   const [deleteTarget, setDeleteTarget] = useState(null);
@@ -74,121 +71,134 @@ export default function ManageMovies() {
     fetchMovies();
   }, [fetchMovies]);
 
-  // Load available posters from backend on demand
-  const loadAvailablePosters = async () => {
-    if (availablePosters.length > 0) return;
-    try {
-      setLoadingPosters(true);
-      const res = await api.get("/api/movies/posters/available");
-      if (Array.isArray(res.data)) {
-        setAvailablePosters(res.data);
-      }
-    } catch {
-      // Fallback posters from existing movies and presets
-      const fallbackMap = new Map();
-      movies.forEach((m) => {
-        if (m.poster) {
-          fallbackMap.set(m.poster, {
-            title: m.title || m.movieName,
-            poster: m.poster,
-            source: "Database",
-          });
-        }
-      });
-      TMDB_CATALOG_PRESETS.forEach((p) => {
-        if (p.poster && !fallbackMap.has(p.poster)) {
-          fallbackMap.set(p.poster, {
-            title: p.title,
-            poster: p.poster,
-            source: "TMDB Synchronized",
-          });
-        }
-      });
-      setAvailablePosters(Array.from(fallbackMap.values()));
-    } finally {
-      setLoadingPosters(false);
-    }
-  };
-
-  const handleOpenPosterModal = () => {
-    setPosterModalOpen(true);
-    loadAvailablePosters();
-  };
-
-  const handleSelectPoster = (posterUrl) => {
-    setFormData((prev) => ({ ...prev, poster: posterUrl }));
-    setPosterModalOpen(false);
-    toast.success("Poster selected and preview updated!");
-  };
-
-  // Combine database movies and TMDB presets for the auto-fill picker
-  const combinedCatalogList = useMemo(() => {
+  // Unified Catalog of all available movies: existing database movies + TMDB verified presets
+  const availableMoviesCatalog = useMemo(() => {
     const list = [];
     const seenTitles = new Set();
 
-    // 1. Database movies
-    if (catalogFilter === "all" || catalogFilter === "database") {
-      movies.forEach((m) => {
-        const title = m.title || m.movieName || "";
-        const lower = title.toLowerCase().trim();
-        seenTitles.add(lower);
-        list.push({
-          ...m,
-          source: "Database",
-          isDatabase: true,
-          releaseYear: m.releaseDate ? new Date(m.releaseDate).getFullYear() : "2024",
-        });
+    // 1. Existing movies from MongoDB
+    movies.forEach((m) => {
+      const title = (m.title || m.movieName || "").trim();
+      const lower = title.toLowerCase();
+      if (!lower) return;
+      seenTitles.add(lower);
+      list.push({
+        ...m,
+        title,
+        movieName: title,
+        source: "Database",
+        isDatabase: true,
+        releaseYear: m.releaseDate ? new Date(m.releaseDate).getFullYear() : "2024",
       });
-    }
-
-    // 2. TMDB Synchronized Presets
-    if (catalogFilter === "all" || catalogFilter === "tmdb") {
-      TMDB_CATALOG_PRESETS.forEach((p) => {
-        const lower = p.title.toLowerCase().trim();
-        const existsInDb = seenTitles.has(lower);
-        list.push({
-          ...p,
-          source: existsInDb ? "Database & TMDB" : "TMDB Catalog",
-          isDatabase: existsInDb,
-          releaseYear: p.releaseDate ? new Date(p.releaseDate).getFullYear() : "2024",
-        });
-      });
-    }
-
-    if (!catalogSearch.trim()) return list;
-
-    const q = catalogSearch.toLowerCase().trim();
-    return list.filter((item) => {
-      const title = (item.title || item.movieName || "").toLowerCase();
-      const lang = (item.language || "").toLowerCase();
-      const genres = Array.isArray(item.genre)
-        ? item.genre.join(" ").toLowerCase()
-        : (item.genre || "").toLowerCase();
-      return title.includes(q) || lang.includes(q) || genres.includes(q);
     });
-  }, [movies, catalogFilter, catalogSearch]);
 
-  // Handle selecting a movie card to autofill form
-  const handleSelectTemplateMovie = (m) => {
+    // 2. TMDB Synchronized Blockbuster Presets
+    TMDB_CATALOG_PRESETS.forEach((p) => {
+      const title = (p.title || p.movieName || "").trim();
+      const lower = title.toLowerCase();
+      const existsInDb = seenTitles.has(lower);
+      list.push({
+        ...p,
+        title,
+        movieName: title,
+        source: existsInDb ? "Database & TMDB" : "TMDB Catalog",
+        isDatabase: existsInDb,
+        releaseYear: p.releaseDate ? new Date(p.releaseDate).getFullYear() : "2024",
+      });
+    });
+
+    return list;
+  }, [movies]);
+
+  // Distinct languages derived dynamically from catalog
+  const distinctLanguages = useMemo(() => {
+    const set = new Set();
+    availableMoviesCatalog.forEach((m) => {
+      if (m.language && typeof m.language === "string") {
+        set.add(m.language.trim());
+      }
+    });
+    return ["All", ...Array.from(set).sort()];
+  }, [availableMoviesCatalog]);
+
+  // Distinct theatrical statuses derived dynamically from catalog
+  const distinctStatuses = ["All", "Now Showing", "Coming Soon", "Advance Booking", "Ended"];
+
+  // Filtered movies for the Movie Selection Modal
+  const filteredModalMovies = useMemo(() => {
+    return availableMoviesCatalog.filter((m) => {
+      const title = (m.title || m.movieName || "").toLowerCase();
+      const lang = (m.language || "").toLowerCase();
+      const genre = Array.isArray(m.genre)
+        ? m.genre.join(" ").toLowerCase()
+        : Array.isArray(m.genres)
+        ? m.genres.join(" ").toLowerCase()
+        : (m.genre || "").toLowerCase();
+      const director = (m.director || "").toLowerCase();
+      const cast = Array.isArray(m.cast)
+        ? m.cast.join(" ").toLowerCase()
+        : (m.cast || "").toLowerCase();
+
+      const q = modalSearch.toLowerCase().trim();
+      const matchesSearch =
+        !q ||
+        title.includes(q) ||
+        lang.includes(q) ||
+        genre.includes(q) ||
+        director.includes(q) ||
+        cast.includes(q);
+
+      if (!matchesSearch) return false;
+
+      if (modalLanguage !== "All" && m.language !== modalLanguage) {
+        return false;
+      }
+
+      if (modalStatus !== "All" && (m.theatricalStatus || "Now Showing") !== modalStatus) {
+        return false;
+      }
+
+      return true;
+    });
+  }, [availableMoviesCatalog, modalSearch, modalLanguage, modalStatus]);
+
+  // Modal Pagination
+  const totalModalPages = Math.ceil(filteredModalMovies.length / modalPageSize) || 1;
+  const paginatedModalMovies = useMemo(() => {
+    return filteredModalMovies.slice(
+      (modalPage - 1) * modalPageSize,
+      modalPage * modalPageSize
+    );
+  }, [filteredModalMovies, modalPage, modalPageSize]);
+
+  // Reset modal page when filters change
+  useEffect(() => {
+    setModalPage(1);
+  }, [modalSearch, modalLanguage, modalStatus]);
+
+  // Handle selecting a movie card inside the modal
+  const handleSelectMovieFromModal = (m) => {
     const titleKey = (m.title || m.movieName || "").trim().toLowerCase();
     const existingDbMovie = movies.find(
       (dbM) => (dbM.title || dbM.movieName || "").trim().toLowerCase() === titleKey
     );
 
-    if (existingDbMovie) {
-      // If already exists in DB, edit existing to prevent duplicate record
+    if (existingDbMovie && !editingId) {
+      // If adding a movie that already exists in DB, transition into edit mode to prevent duplicates
       handleEdit(existingDbMovie);
       toast.success(
         `Loaded existing movie "${existingDbMovie.title || existingDbMovie.movieName}" for editing. Duplicate creation prevented.`
       );
     } else {
-      // Populate fields from TMDB preset for quick adding
-      setEditingId(null);
-      setFormData({
+      // Populate fields automatically from chosen movie / TMDB record
+      setFormData((prev) => ({
+        ...prev,
         title: m.title || m.movieName || "",
         language: m.language || "Hindi",
         genre: Array.isArray(m.genre)
           ? m.genre.join(", ")
+          : Array.isArray(m.genres)
+          ? m.genres.join(", ")
           : m.genre || "Action, Drama",
         certification: m.certification || "U/A",
         duration: m.duration || m.runtime || 150,
@@ -199,19 +209,17 @@ export default function ManageMovies() {
         releaseDate: m.releaseDate
           ? new Date(m.releaseDate).toISOString().split("T")[0]
           : new Date().toISOString().split("T")[0],
-        poster: m.poster || "",
+        poster: m.poster || m.media || "",
         description: m.description || "",
-      });
+      }));
       toast.success(
-        `Autofilled "${m.title}" details from TMDB catalog! Customize fields and click Add Movie.`
+        `Selected "${m.title || m.movieName}"! Poster and movie details auto-populated.`
       );
     }
 
-    // Scroll smoothly to form
+    setMovieModalOpen(false);
     const formEl = document.getElementById("movie-form-section");
-    if (formEl) {
-      formEl.scrollIntoView({ behavior: "smooth" });
-    }
+    if (formEl) formEl.scrollIntoView({ behavior: "smooth" });
   };
 
   const handleSubmit = async (e) => {
@@ -222,6 +230,11 @@ export default function ManageMovies() {
     const normalizedTitle = formData.title.trim();
     if (!normalizedTitle) {
       toast.error("Movie title is required.");
+      return;
+    }
+
+    if (!formData.poster) {
+      toast.error("Please select a movie poster using the 'Select Existing Movie' button.");
       return;
     }
 
@@ -339,17 +352,6 @@ export default function ManageMovies() {
     currentPage * itemsPerPage
   );
 
-  // Filtered available posters inside poster modal
-  const filteredPosters = useMemo(() => {
-    if (!posterSearch.trim()) return availablePosters.slice(0, 100);
-    const q = posterSearch.toLowerCase().trim();
-    return availablePosters.filter((p) => {
-      const title = (p.title || "").toLowerCase();
-      const lang = (p.language || "").toLowerCase();
-      return title.includes(q) || lang.includes(q);
-    });
-  }, [availablePosters, posterSearch]);
-
   return (
     <div className="container py-4 fade-in" style={{ maxWidth: "1150px" }}>
       {/* Top Admin Navigation */}
@@ -368,183 +370,31 @@ export default function ManageMovies() {
         </Link>
       </div>
 
-      {/* 1. Quick Movie Selection & TMDB Autofill Section */}
-      <div className="glass-panel p-4 mb-4" style={{ background: "#131726", borderColor: "rgba(229, 9, 20, 0.25)" }}>
-        <div className="d-flex justify-content-between align-items-center mb-3">
-          <div>
-            <h5 className="text-white fw-bold mb-1">
-              <i className="fa-solid fa-bolt text-warning me-2"></i>
-              Select Existing Movie or TMDB Catalog to Autofill
-            </h5>
-            <div className="text-secondary small">
-              Choose from existing database movies or verified TMDB blockbusters to automatically populate details without manual typing.
-            </div>
+      {/* Quick Action Banner to Choose Movie from Database */}
+      <div
+        className="glass-panel p-4 mb-4 d-flex flex-column flex-md-row justify-content-between align-items-md-center gap-3"
+        style={{ background: "#131726", border: "1px solid rgba(229, 9, 20, 0.3)" }}
+      >
+        <div>
+          <h5 className="text-white fw-bold mb-1">
+            <i className="fa-solid fa-clapperboard text-danger me-2"></i>
+            Database Movie &amp; Poster Selection
+          </h5>
+          <div className="text-secondary small">
+            Choose from {availableMoviesCatalog.length} existing database movies and verified TMDB blockbusters to automatically populate details and poster without manual URL typing.
           </div>
-          <button
-            type="button"
-            onClick={() => setShowCatalogPicker((prev) => !prev)}
-            className="btn btn-sm btn-secondary-cinema"
-          >
-            {showCatalogPicker ? "Collapse Picker" : "Expand Picker"}
-          </button>
         </div>
-
-        {showCatalogPicker && (
-          <div>
-            {/* Search and Filters */}
-            <div className="row g-2 mb-3">
-              <div className="col-12 col-md-7">
-                <div className="input-group">
-                  <span className="input-group-text bg-dark border-secondary text-secondary">
-                    <i className="fa-solid fa-magnifying-glass"></i>
-                  </span>
-                  <input
-                    type="text"
-                    className="form-control cinema-input"
-                    placeholder="Search existing movies or TMDB catalog (e.g. Inception, Fighter, Jawan, Drishyam)..."
-                    value={catalogSearch}
-                    onChange={(e) => setCatalogSearch(e.target.value)}
-                  />
-                  {catalogSearch && (
-                    <button
-                      className="btn btn-outline-secondary"
-                      onClick={() => setCatalogSearch("")}
-                    >
-                      Clear
-                    </button>
-                  )}
-                </div>
-              </div>
-              <div className="col-12 col-md-5 d-flex gap-2 justify-content-md-end">
-                <button
-                  type="button"
-                  onClick={() => setCatalogFilter("all")}
-                  className={`btn btn-sm ${catalogFilter === "all" ? "btn-danger" : "btn-secondary-cinema"}`}
-                >
-                  All ({movies.length + TMDB_CATALOG_PRESETS.length})
-                </button>
-                <button
-                  type="button"
-                  onClick={() => setCatalogFilter("database")}
-                  className={`btn btn-sm ${catalogFilter === "database" ? "btn-danger" : "btn-secondary-cinema"}`}
-                >
-                  In Database ({movies.length})
-                </button>
-                <button
-                  type="button"
-                  onClick={() => setCatalogFilter("tmdb")}
-                  className={`btn btn-sm ${catalogFilter === "tmdb" ? "btn-danger" : "btn-secondary-cinema"}`}
-                >
-                  TMDB Presets ({TMDB_CATALOG_PRESETS.length})
-                </button>
-              </div>
-            </div>
-
-            {/* Horizontal Scrollable Movie Cards */}
-            <div
-              className="d-flex gap-3 overflow-auto pb-3 pt-1"
-              style={{
-                scrollbarWidth: "thin",
-                scrollbarColor: "#e50914 #151828",
-              }}
-            >
-              {combinedCatalogList.slice(0, 16).map((m, idx) => {
-                const title = m.title || m.movieName;
-                const poster = getPosterUrl(m);
-                const isDb = m.isDatabase || Boolean(m._id);
-                return (
-                  <div
-                    key={`${title}-${idx}`}
-                    onClick={() => handleSelectTemplateMovie(m)}
-                    className="glass-card p-2 flex-shrink-0 cursor-pointer text-start"
-                    style={{
-                      width: "185px",
-                      background: "#181b2e",
-                      border: "1px solid rgba(255, 255, 255, 0.1)",
-                      borderRadius: "8px",
-                      cursor: "pointer",
-                      transition: "transform 0.2s, border-color 0.2s",
-                    }}
-                    onMouseEnter={(e) => {
-                      e.currentTarget.style.borderColor = "#e50914";
-                      e.currentTarget.style.transform = "translateY(-3px)";
-                    }}
-                    onMouseLeave={(e) => {
-                      e.currentTarget.style.borderColor = "rgba(255, 255, 255, 0.1)";
-                      e.currentTarget.style.transform = "translateY(0)";
-                    }}
-                    title="Click to automatically fill movie details"
-                  >
-                    <div
-                      style={{
-                        height: "170px",
-                        overflow: "hidden",
-                        borderRadius: "6px",
-                        backgroundColor: "#111422",
-                      }}
-                    >
-                      <img
-                        src={poster}
-                        alt={title}
-                        style={{ width: "100%", height: "100%", objectFit: "cover" }}
-                        onError={(e) => {
-                          e.currentTarget.onerror = null;
-                          e.currentTarget.src = createTitlePosterSvg(title);
-                        }}
-                      />
-                    </div>
-                    <div className="pt-2">
-                      <div className="d-flex justify-content-between align-items-center mb-1">
-                        <span
-                          className={`badge ${isDb ? "bg-primary" : "bg-danger"}`}
-                          style={{ fontSize: "0.6rem" }}
-                        >
-                          {isDb ? "In Database" : "TMDB Autofill"}
-                        </span>
-                        <span className="text-secondary" style={{ fontSize: "0.68rem" }}>
-                          {m.releaseYear || "2024"}
-                        </span>
-                      </div>
-                      <h6
-                        className="text-white fw-bold mb-1 text-truncate"
-                        style={{ fontSize: "0.82rem" }}
-                        title={title}
-                      >
-                        {title}
-                      </h6>
-                      <div className="text-secondary small d-flex justify-content-between" style={{ fontSize: "0.7rem" }}>
-                        <span>{m.language || "Hindi"}</span>
-                        <span className="text-danger fw-semibold">
-                          {m.theatricalStatus || "Now Showing"}
-                        </span>
-                      </div>
-                      <button
-                        type="button"
-                        className="btn btn-sm btn-outline-danger w-100 mt-2 py-1"
-                        style={{ fontSize: "0.72rem" }}
-                        onClick={(e) => {
-                          e.stopPropagation();
-                          handleSelectTemplateMovie(m);
-                        }}
-                      >
-                        <i className="fa-solid fa-wand-magic-sparkles me-1"></i>
-                        {isDb ? "Edit Movie" : "Autofill Fields"}
-                      </button>
-                    </div>
-                  </div>
-                );
-              })}
-            </div>
-            {combinedCatalogList.length === 0 && (
-              <div className="text-center py-3 text-secondary small">
-                No matching movies found in database or TMDB presets.
-              </div>
-            )}
-          </div>
-        )}
+        <button
+          type="button"
+          onClick={() => setMovieModalOpen(true)}
+          className="btn btn-cinema px-4 py-2 fw-bold text-nowrap"
+        >
+          <i className="fa-solid fa-magnifying-glass me-2"></i>
+          Select Existing Movie
+        </button>
       </div>
 
-      {/* 2. Add / Edit Movie Form with Live Poster Preview and Poster Picker */}
+      {/* Add / Edit Movie Form */}
       <div
         id="movie-form-section"
         className="glass-panel p-4 p-md-5 mb-5"
@@ -557,8 +407,8 @@ export default function ManageMovies() {
             </h4>
             <div className="text-secondary small">
               {editingId
-                ? "Editing existing database record. All changes update across shows."
-                : "New movie will be verified and added to the cinema catalog."}
+                ? "Editing existing database record. All updates apply across scheduled screenings."
+                : "Select an existing movie to autofill details, or configure customized metadata."}
             </div>
           </div>
           {editingId && (
@@ -570,7 +420,7 @@ export default function ManageMovies() {
               }}
               className="btn btn-sm btn-secondary-cinema"
             >
-              Cancel Edit & Add New
+              Cancel Edit &amp; Add New
             </button>
           )}
         </div>
@@ -579,7 +429,7 @@ export default function ManageMovies() {
         {successMsg && <div className="alert alert-success py-2 small mb-3">{successMsg}</div>}
 
         <form onSubmit={handleSubmit}>
-          {/* Live Poster Preview Box and Gallery Selector */}
+          {/* Live Poster Preview Box */}
           <div className="d-flex flex-column align-items-center mb-4">
             <div
               className="rounded-3 d-flex align-items-center justify-content-center overflow-hidden border shadow mb-2"
@@ -587,7 +437,7 @@ export default function ManageMovies() {
                 width: "160px",
                 height: "230px",
                 backgroundColor: "#1a1d2e",
-                borderColor: "rgba(255, 255, 255, 0.15)",
+                borderColor: formData.poster ? "#e50914" : "rgba(255, 255, 255, 0.15)",
               }}
             >
               {formData.poster ? (
@@ -602,8 +452,11 @@ export default function ManageMovies() {
                 />
               ) : (
                 <div className="text-center p-3 text-secondary">
-                  <i className="fa-regular fa-image fs-1 mb-2"></i>
-                  <div style={{ fontSize: "0.75rem" }}>Live Poster Preview</div>
+                  <i className="fa-solid fa-film fs-1 mb-2 text-danger opacity-50"></i>
+                  <div className="fw-semibold text-white small">No Poster Selected</div>
+                  <div style={{ fontSize: "0.72rem" }} className="mt-1">
+                    Click below to choose from database
+                  </div>
                 </div>
               )}
             </div>
@@ -611,18 +464,18 @@ export default function ManageMovies() {
             <div className="d-flex gap-2">
               <button
                 type="button"
-                onClick={handleOpenPosterModal}
-                className="btn btn-sm btn-secondary-cinema"
+                onClick={() => setMovieModalOpen(true)}
+                className="btn btn-sm btn-cinema fw-bold"
                 style={{ fontSize: "0.78rem" }}
               >
-                <i className="fa-regular fa-images me-1 text-danger"></i>
-                Browse Existing Posters
+                <i className="fa-solid fa-clapperboard me-1"></i>
+                {formData.poster ? "Change Movie & Poster" : "Choose Movie & Poster"}
               </button>
               {formData.poster && (
                 <button
                   type="button"
                   onClick={() => setFormData((prev) => ({ ...prev, poster: "" }))}
-                  className="btn btn-sm btn-outline-secondary"
+                  className="btn btn-sm btn-secondary-cinema"
                   style={{ fontSize: "0.78rem" }}
                 >
                   Clear Poster
@@ -632,6 +485,7 @@ export default function ManageMovies() {
           </div>
 
           <div className="row g-3">
+            {/* Movie Title */}
             <div className="col-12 col-md-6">
               <label className="text-secondary small fw-bold mb-1 d-block">
                 Movie Title <span className="text-danger">*</span>
@@ -646,6 +500,7 @@ export default function ManageMovies() {
               />
             </div>
 
+            {/* Language */}
             <div className="col-12 col-md-3">
               <label className="text-secondary small fw-bold mb-1 d-block">
                 Language <span className="text-danger">*</span>
@@ -660,6 +515,7 @@ export default function ManageMovies() {
               />
             </div>
 
+            {/* Theatrical Status */}
             <div className="col-12 col-md-3">
               <label className="text-secondary small fw-bold mb-1 d-block">Theatrical Status</label>
               <select
@@ -675,6 +531,7 @@ export default function ManageMovies() {
               </select>
             </div>
 
+            {/* Genres */}
             <div className="col-12 col-md-4">
               <label className="text-secondary small fw-bold mb-1 d-block">Genres (comma separated)</label>
               <input
@@ -686,6 +543,7 @@ export default function ManageMovies() {
               />
             </div>
 
+            {/* Certificate */}
             <div className="col-6 col-md-2">
               <label className="text-secondary small fw-bold mb-1 d-block">Certificate</label>
               <select
@@ -700,6 +558,7 @@ export default function ManageMovies() {
               </select>
             </div>
 
+            {/* Duration */}
             <div className="col-6 col-md-2">
               <label className="text-secondary small fw-bold mb-1 d-block">Duration (mins)</label>
               <input
@@ -710,6 +569,7 @@ export default function ManageMovies() {
               />
             </div>
 
+            {/* Release Date */}
             <div className="col-12 col-md-4">
               <label className="text-secondary small fw-bold mb-1 d-block">Release Date</label>
               <input
@@ -720,6 +580,7 @@ export default function ManageMovies() {
               />
             </div>
 
+            {/* Director */}
             <div className="col-12 col-md-6">
               <label className="text-secondary small fw-bold mb-1 d-block">Director</label>
               <input
@@ -731,6 +592,7 @@ export default function ManageMovies() {
               />
             </div>
 
+            {/* Star Cast */}
             <div className="col-12 col-md-6">
               <label className="text-secondary small fw-bold mb-1 d-block">Star Cast (comma separated)</label>
               <input
@@ -742,40 +604,83 @@ export default function ManageMovies() {
               />
             </div>
 
-            {/* Poster URL with Inline Browse Button */}
+            {/* Movie Poster & Metadata Selector (Replaces manual URL/Path input) */}
             <div className="col-12">
-              <div className="d-flex justify-content-between align-items-center mb-1">
-                <label className="text-secondary small fw-bold mb-0">Poster Image URL</label>
-                <button
-                  type="button"
-                  onClick={handleOpenPosterModal}
-                  className="btn btn-link btn-sm text-danger p-0 text-decoration-none"
-                  style={{ fontSize: "0.78rem" }}
-                >
-                  <i className="fa-regular fa-images me-1"></i> Choose from Existing Posters
-                </button>
+              <label className="text-secondary small fw-bold mb-1 d-block">
+                Movie Poster &amp; Metadata Selection <span className="text-danger">*</span>
+              </label>
+              <div
+                className="glass-card p-3 d-flex flex-column flex-sm-row justify-content-between align-items-sm-center gap-3"
+                style={{
+                  backgroundColor: "#181b2e",
+                  border: formData.poster
+                    ? "1px solid rgba(229, 9, 20, 0.4)"
+                    : "1px dashed rgba(255, 255, 255, 0.2)",
+                  borderRadius: "8px",
+                }}
+              >
+                <div className="d-flex align-items-center gap-3 min-w-0">
+                  {formData.poster ? (
+                    <div
+                      className="rounded overflow-hidden flex-shrink-0 border border-secondary border-opacity-25"
+                      style={{ width: "52px", height: "74px", backgroundColor: "#111422" }}
+                    >
+                      <img
+                        src={getPosterUrl({ poster: formData.poster, title: formData.title })}
+                        alt={formData.title || "Poster"}
+                        style={{ width: "100%", height: "100%", objectFit: "cover" }}
+                        onError={(e) => {
+                          e.currentTarget.onerror = null;
+                          e.currentTarget.src = createTitlePosterSvg(formData.title || "Movie");
+                        }}
+                      />
+                    </div>
+                  ) : (
+                    <div
+                      className="rounded d-flex align-items-center justify-content-center text-secondary flex-shrink-0 border border-secondary border-opacity-25"
+                      style={{ width: "52px", height: "74px", backgroundColor: "#141726" }}
+                    >
+                      <i className="fa-regular fa-image fs-4"></i>
+                    </div>
+                  )}
+                  <div className="min-w-0">
+                    <div className="text-white fw-bold small text-truncate">
+                      {formData.poster
+                        ? formData.title || "Poster Selected from Database"
+                        : "No Poster Selected Yet"}
+                    </div>
+                    <div className="text-secondary small" style={{ fontSize: "0.75rem" }}>
+                      {formData.poster
+                        ? "Loaded from existing cinema database. Click button to choose another movie or poster."
+                        : "Choose from existing database movies and TMDB blockbusters. No manual URL typing required."}
+                    </div>
+                  </div>
+                </div>
+
+                <div className="d-flex gap-2 flex-shrink-0">
+                  <button
+                    type="button"
+                    onClick={() => setMovieModalOpen(true)}
+                    className="btn btn-cinema btn-sm py-2 px-3 fw-bold text-nowrap"
+                  >
+                    <i className="fa-solid fa-clapperboard me-1"></i>
+                    {formData.poster ? "Change Movie / Poster" : "Select Existing Movie"}
+                  </button>
+                  {formData.poster && (
+                    <button
+                      type="button"
+                      onClick={() => setFormData((prev) => ({ ...prev, poster: "" }))}
+                      className="btn btn-secondary-cinema btn-sm py-2 px-2"
+                      title="Clear selected poster"
+                    >
+                      <i className="fa-solid fa-xmark"></i>
+                    </button>
+                  )}
+                </div>
               </div>
-              <div className="input-group">
-                <input
-                  type="text"
-                  className="form-control cinema-input"
-                  placeholder="https://image.tmdb.org/t/p/w780/... or /posters/..."
-                  value={formData.poster}
-                  onChange={(e) => setFormData({ ...formData, poster: e.target.value })}
-                />
-                <button
-                  type="button"
-                  className="btn btn-secondary-cinema"
-                  onClick={handleOpenPosterModal}
-                >
-                  Browse Posters
-                </button>
-              </div>
-              <span className="text-secondary" style={{ fontSize: "0.72rem" }}>
-                Select from verified TMDB posters or enter a custom image URL.
-              </span>
             </div>
 
+            {/* Description */}
             <div className="col-12">
               <label className="text-secondary small fw-bold mb-1 d-block">Movie Description / Synopsis</label>
               <textarea
@@ -820,7 +725,7 @@ export default function ManageMovies() {
         </form>
       </div>
 
-      {/* 3. Existing Movies Catalog Section */}
+      {/* Existing Movies Catalog Section */}
       <div className="glass-panel p-4 mb-4">
         <div className="d-flex flex-column flex-sm-row justify-content-between align-items-sm-center gap-2 mb-4">
           <div>
@@ -857,6 +762,7 @@ export default function ManageMovies() {
                       <img
                         src={poster}
                         alt={title}
+                        loading="lazy"
                         style={{ width: "100%", height: "100%", objectFit: "cover" }}
                         onError={(e) => {
                           e.currentTarget.onerror = null;
@@ -914,106 +820,231 @@ export default function ManageMovies() {
         />
       </div>
 
-      {/* 4. Poster Gallery Picker Modal */}
-      {posterModalOpen && (
+      {/* Movie Selection Modal */}
+      {movieModalOpen && (
         <div
           className="modal fade show d-block"
           tabIndex="-1"
-          style={{ backgroundColor: "rgba(0, 0, 0, 0.8)", zIndex: 1060 }}
+          style={{ backgroundColor: "rgba(0, 0, 0, 0.85)", zIndex: 1060 }}
         >
-          <div className="modal-dialog modal-lg modal-dialog-centered modal-dialog-scrollable">
+          <div className="modal-dialog modal-xl modal-dialog-centered modal-dialog-scrollable">
             <div
               className="modal-content text-white"
               style={{ backgroundColor: "#151828", borderColor: "rgba(255, 255, 255, 0.15)" }}
             >
               <div className="modal-header border-secondary border-opacity-25">
                 <div>
-                  <h5 className="modal-title fw-bold">Select Existing Movie Poster</h5>
+                  <h5 className="modal-title fw-bold">Select Existing Movie &amp; Poster</h5>
                   <div className="text-secondary small">
-                    Browse posters from database catalog and verified TMDB synchronized blockbusters
+                    Browse all movies from database and verified TMDB catalog. Selecting a movie auto-populates all details and poster.
                   </div>
                 </div>
                 <button
                   type="button"
                   className="btn-close btn-close-white"
-                  onClick={() => setPosterModalOpen(false)}
+                  onClick={() => setMovieModalOpen(false)}
                 ></button>
               </div>
 
               <div className="modal-body p-4">
-                {/* Search posters */}
-                <div className="mb-3">
-                  <input
-                    type="text"
-                    className="form-control cinema-input"
-                    placeholder="Search poster by movie title (e.g. Inception, Fighter, Jawan)..."
-                    value={posterSearch}
-                    onChange={(e) => setPosterSearch(e.target.value)}
-                  />
+                {/* Search & Filters */}
+                <div className="row g-2 mb-3">
+                  <div className="col-12 col-md-5">
+                    <div className="input-group">
+                      <span className="input-group-text bg-dark border-secondary text-secondary">
+                        <i className="fa-solid fa-magnifying-glass"></i>
+                      </span>
+                      <input
+                        type="text"
+                        className="form-control cinema-input"
+                        placeholder="Search by title, genre, actor, or director..."
+                        value={modalSearch}
+                        onChange={(e) => setModalSearch(e.target.value)}
+                        autoFocus
+                      />
+                      {modalSearch && (
+                        <button
+                          className="btn btn-outline-secondary"
+                          onClick={() => setModalSearch("")}
+                        >
+                          Clear
+                        </button>
+                      )}
+                    </div>
+                  </div>
+
+                  {/* Filter by Language */}
+                  <div className="col-6 col-md-3">
+                    <select
+                      className="form-select cinema-input"
+                      value={modalLanguage}
+                      onChange={(e) => setModalLanguage(e.target.value)}
+                    >
+                      {distinctLanguages.map((lang) => (
+                        <option key={lang} value={lang}>
+                          Language: {lang}
+                        </option>
+                      ))}
+                    </select>
+                  </div>
+
+                  {/* Filter by Theatrical Status */}
+                  <div className="col-6 col-md-4">
+                    <select
+                      className="form-select cinema-input"
+                      value={modalStatus}
+                      onChange={(e) => setModalStatus(e.target.value)}
+                    >
+                      {distinctStatuses.map((st) => (
+                        <option key={st} value={st}>
+                          Status: {st}
+                        </option>
+                      ))}
+                    </select>
+                  </div>
                 </div>
 
-                {loadingPosters ? (
-                  <LoadingSpinner message="Loading poster gallery..." />
-                ) : filteredPosters.length === 0 ? (
+                <div className="d-flex justify-content-between align-items-center mb-3">
+                  <span className="text-secondary small">
+                    Showing {paginatedModalMovies.length} of {filteredModalMovies.length} matching movies
+                  </span>
+                  <span className="text-secondary small">
+                    Page {modalPage} of {totalModalPages}
+                  </span>
+                </div>
+
+                {/* Responsive Grid of Movie Cards */}
+                {filteredModalMovies.length === 0 ? (
                   <div className="text-center py-5 text-secondary">
-                    No matching posters found.
+                    No movies found matching your search and filter criteria.
                   </div>
                 ) : (
-                  <div className="row row-cols-3 row-cols-sm-4 row-cols-md-5 g-3">
-                    {filteredPosters.map((p, pIdx) => {
-                      const displayTitle = p.title || `Poster ${pIdx + 1}`;
-                      const isSelected = formData.poster === p.poster;
+                  <div className="row row-cols-2 row-cols-sm-3 row-cols-md-4 row-cols-lg-6 g-3">
+                    {paginatedModalMovies.map((m, mIdx) => {
+                      const title = m.title || m.movieName;
+                      const poster = getPosterUrl(m);
+                      const isSelected = formData.poster === m.poster || (formData.title && formData.title.toLowerCase() === title.toLowerCase());
+                      const releaseYear = m.releaseDate
+                        ? new Date(m.releaseDate).getFullYear()
+                        : "2024";
+
                       return (
-                        <div key={`${p.poster}-${pIdx}`} className="col">
+                        <div key={`${title}-${mIdx}`} className="col">
                           <div
-                            onClick={() => handleSelectPoster(p.poster)}
-                            className="glass-card p-1 text-center cursor-pointer h-100 d-flex flex-column"
+                            onClick={() => handleSelectMovieFromModal(m)}
+                            className="glass-card p-2 text-start cursor-pointer h-100 d-flex flex-column justify-content-between"
                             style={{
                               border: isSelected
                                 ? "2px solid #e50914"
                                 : "1px solid rgba(255, 255, 255, 0.1)",
                               backgroundColor: isSelected ? "#2a151d" : "#191c2c",
-                              borderRadius: "6px",
+                              borderRadius: "8px",
                               cursor: "pointer",
+                              transition: "transform 0.2s, border-color 0.2s",
+                            }}
+                            onMouseEnter={(e) => {
+                              if (!isSelected) e.currentTarget.style.borderColor = "#e50914";
+                              e.currentTarget.style.transform = "translateY(-2px)";
+                            }}
+                            onMouseLeave={(e) => {
+                              if (!isSelected)
+                                e.currentTarget.style.borderColor = "rgba(255, 255, 255, 0.1)";
+                              e.currentTarget.style.transform = "translateY(0)";
                             }}
                           >
                             <div
                               style={{
-                                height: "135px",
+                                height: "185px",
                                 overflow: "hidden",
-                                borderRadius: "4px",
+                                borderRadius: "6px",
                                 backgroundColor: "#111422",
                               }}
                             >
                               <img
-                                src={p.poster}
-                                alt={displayTitle}
+                                src={poster}
+                                alt={title}
+                                loading="lazy"
                                 style={{ width: "100%", height: "100%", objectFit: "cover" }}
                                 onError={(e) => {
                                   e.currentTarget.onerror = null;
-                                  e.currentTarget.src = createTitlePosterSvg(displayTitle);
+                                  e.currentTarget.src = createTitlePosterSvg(title);
                                 }}
                               />
                             </div>
-                            <div className="p-1 mt-auto">
-                              <div
-                                className="text-white text-truncate small fw-semibold"
-                                style={{ fontSize: "0.72rem" }}
-                                title={displayTitle}
-                              >
-                                {displayTitle}
+
+                            <div className="pt-2 flex-grow-1 d-flex flex-column justify-content-between">
+                              <div>
+                                <div className="d-flex justify-content-between align-items-center mb-1">
+                                  <span
+                                    className="badge bg-danger small"
+                                    style={{ fontSize: "0.58rem" }}
+                                  >
+                                    {m.theatricalStatus || "Now Showing"}
+                                  </span>
+                                  <span className="text-warning small" style={{ fontSize: "0.68rem" }}>
+                                    <i className="fa-solid fa-star me-1" style={{ fontSize: "0.58rem" }}></i>
+                                    {m.rating || "8.0"}
+                                  </span>
+                                </div>
+
+                                <h6
+                                  className="text-white fw-bold mb-0 text-truncate"
+                                  title={title}
+                                  style={{ fontSize: "0.8rem" }}
+                                >
+                                  {title}
+                                </h6>
+                                <div
+                                  className="text-secondary small"
+                                  style={{ fontSize: "0.68rem" }}
+                                >
+                                  {m.language || "Hindi"} &bull; {releaseYear}
+                                </div>
                               </div>
-                              <span
-                                className="badge bg-secondary text-light mt-1"
-                                style={{ fontSize: "0.58rem" }}
+
+                              <button
+                                type="button"
+                                onClick={(e) => {
+                                  e.stopPropagation();
+                                  handleSelectMovieFromModal(m);
+                                }}
+                                className={`btn btn-sm w-100 mt-2 py-1 ${
+                                  isSelected ? "btn-danger" : "btn-secondary-cinema"
+                                }`}
+                                style={{ fontSize: "0.72rem" }}
                               >
-                                {p.source || "Database"}
-                              </span>
+                                {isSelected ? "Selected" : "Select Movie"}
+                              </button>
                             </div>
                           </div>
                         </div>
                       );
                     })}
+                  </div>
+                )}
+
+                {/* Modal Pagination */}
+                {totalModalPages > 1 && (
+                  <div className="d-flex justify-content-center align-items-center gap-2 mt-4 pt-2 border-top border-secondary border-opacity-25">
+                    <button
+                      type="button"
+                      disabled={modalPage === 1}
+                      onClick={() => setModalPage((p) => Math.max(1, p - 1))}
+                      className="btn btn-sm btn-secondary-cinema"
+                    >
+                      &larr; Previous
+                    </button>
+                    <span className="text-secondary small px-2">
+                      Page {modalPage} of {totalModalPages}
+                    </span>
+                    <button
+                      type="button"
+                      disabled={modalPage === totalModalPages}
+                      onClick={() => setModalPage((p) => Math.min(totalModalPages, p + 1))}
+                      className="btn btn-sm btn-secondary-cinema"
+                    >
+                      Next &rarr;
+                    </button>
                   </div>
                 )}
               </div>
@@ -1022,7 +1053,7 @@ export default function ManageMovies() {
                 <button
                   type="button"
                   className="btn btn-secondary-cinema"
-                  onClick={() => setPosterModalOpen(false)}
+                  onClick={() => setMovieModalOpen(false)}
                 >
                   Close
                 </button>
